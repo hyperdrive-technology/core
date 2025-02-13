@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/inrush/inrush/runtime/internal/runtime"
-	"github.com/inrush/inrush/runtime/internal/websocket"
+	"github.com/inrush-io/inrush/apps/runtime/internal/runtime"
+	"github.com/inrush-io/inrush/apps/runtime/internal/websocket"
 )
 
 func main() {

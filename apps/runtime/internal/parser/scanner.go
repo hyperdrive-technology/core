@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"github.com/inrush-io/inrush/apps/runtime/internal/parser/dsl"
+	"github.com/inrush-io/dsl"
 )
 
 var recovering bool
@@ -141,12 +141,10 @@ func literal(s *dsl.Scanner) {
 			{'0', '9', nil}},
 		Options: dsl.ExpectRuneOptions{Multiple: true, Optional: true}})
 
-	s.Peek([]dsl.BranchString{{
-		String: "..",
-		Fn: func(s *dsl.Scanner) {
-			s.Match([]dsl.Match{{"", TOKEN_LITERAL}})
-		},
-	}})
+	s.Expect(dsl.ExpectRune{
+		Branches: []dsl.Branch{
+			{'.', fraction}},
+		Options: dsl.ExpectRuneOptions{Optional: true}})
 
 	s.Expect(dsl.ExpectRune{
 		Branches: []dsl.Branch{

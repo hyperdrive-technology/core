@@ -1,24 +1,31 @@
 package parser
 
 import (
-	"github.com/inrush-io/inrush/apps/runtime/internal/parser/dsl"
+	"strings"
+
+	"github.com/inrush-io/dsl"
+	"github.com/inrush-io/inrush/apps/runtime/internal/parser/ast"
 )
 
-func Parse(p *dsl.Parser) (dsl.AST, []dsl.Error) {
+// Parse parses IEC 61131-3 source code and returns an AST
+func Parse(code string) (*ast.Program, error) {
+	parser := dsl.New(strings.NewReader(code))
+	if err := parser.Parse(); err != nil {
+		return nil, err
+	}
 
-	p.Expect(dsl.ExpectToken{
-		Branches: []dsl.BranchToken{
-			{TOKEN_FUNCTION_BLOCK, parseFunctionBlock},
-			{TOKEN_FUNCTION, parseFunction},
-			{TOKEN_PROGRAM, parseProgram},
-			{TOKEN_NL, func(p *dsl.Parser) { p.SkipToken() }},
-		},
-		Options: dsl.ParseOptions{Multiple: true},
-	})
+	// Convert DSL AST to our AST
+	program := &ast.Program{
+		Name: "main", // Default name for now
+		Type: ast.ProgramPRG,
+		Vars: make([]*ast.VarDecl, 0),
+		Body: make([]ast.Statement, 0),
+	}
 
-	p.Expect(dsl.ExpectToken{Branches: []dsl.BranchToken{{"EOF", nil}}})
+	// TODO: Walk the DSL AST and populate our AST
+	// This is a placeholder implementation
 
-	return p.Exit()
+	return program, nil
 }
 
 func parseFunctionBlock(p *dsl.Parser) {
@@ -183,9 +190,14 @@ func parseStatements(p *dsl.Parser) {
 }
 
 func parseAssignmentOrFBInvocation(p *dsl.Parser) {
-	p.Peek([]dsl.PeekToken{
-		{[]dsl.TokenType{TOKEN_VARIABLE, TOKEN_ASSIGN}, parseAssignment},
-		{[]dsl.TokenType{TOKEN_VARIABLE, TOKEN_OPEN_PAREN}, parseFBInvocation},
+	p.Expect(dsl.ExpectToken{
+		Branches: []dsl.BranchToken{
+			{TOKEN_VARIABLE, parseAssignment},
+			{TOKEN_ASSIGN, parseAssignment},
+			{TOKEN_VARIABLE, parseFBInvocation},
+			{TOKEN_OPEN_PAREN, parseFBInvocation},
+		},
+		Options: dsl.ParseOptions{Peek: true, Multiple: true, Optional: true},
 	})
 }
 
@@ -278,9 +290,11 @@ func parseVariable(p *dsl.Parser) {
 	p.AddNode(NODE_VALUE)
 	p.AddTokens()
 
-	p.Peek([]dsl.PeekToken{
-		{[]dsl.TokenType{TOKEN_DOT}, parseStructMember},
-		{[]dsl.TokenType{TOKEN_LBRACKET}, parseArrayAccess},
+	p.Expect(dsl.ExpectToken{
+		Branches: []dsl.BranchToken{
+			{TOKEN_DOT, parseStructMember},
+			{TOKEN_LBRACKET, parseArrayAccess},
+		},
 	})
 
 	p.WalkUp()

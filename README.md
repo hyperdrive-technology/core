@@ -37,7 +37,7 @@ inrush/
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/inrush/inrush.git
+   git clone https://github.com/inrush-io/inrush.git
    cd inrush
    ```
 

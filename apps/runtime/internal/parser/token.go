@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"github.com/inrush-io/inrush/apps/runtime/internal/parser/dsl"
+	"github.com/inrush-io/dsl"
 )
 
 const (

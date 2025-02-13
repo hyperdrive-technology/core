@@ -2,11 +2,10 @@ package runtime
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/yourusername/inrush/runtime/internal/parser/ast"
-	"github.com/yourusername/inrush/runtime/internal/parser/parser"
+	"github.com/inrush-io/inrush/apps/runtime/internal/parser"
+	"github.com/inrush-io/inrush/apps/runtime/internal/parser/ast"
 )
 
 // Program represents an executable IEC 61131-3 program
@@ -21,8 +20,7 @@ type Program struct {
 
 // NewProgram creates a new program from source code
 func NewProgram(name, code string) (*Program, error) {
-	p := parser.NewParser(strings.NewReader(code))
-	astProg, err := p.Parse()
+	astProg, err := parser.Parse(code)
 	if err != nil {
 		return nil, fmt.Errorf("parse error: %w", err)
 	}

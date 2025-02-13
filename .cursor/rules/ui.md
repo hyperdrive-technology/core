@@ -1,0 +1,68 @@
+# UI Architecture Rules
+
+## Component Structure
+
+1. All React components should be functional components
+2. Use TypeScript for type safety
+3. Place components in logical directories:
+   ```
+   src/
+   ├── app/              # Next.js app router pages
+   ├── components/       # Reusable components
+   │   ├── layout/      # Layout components
+   │   ├── plc/         # PLC-specific components
+   │   └── scada/       # SCADA-specific components
+   ├── lib/             # Utility functions and classes
+   ├── hooks/           # Custom React hooks
+   ├── types/           # TypeScript type definitions
+   └── trpc/            # tRPC API integration
+   ```
+
+## State Management
+
+1. Use React hooks for local state
+2. Use tRPC for server state
+3. Use WebSocket for real-time updates
+4. Avoid global state when possible
+
+## Component Guidelines
+
+1. Keep components small and focused
+2. Use TypeScript interfaces for props
+3. Document complex components with JSDoc
+4. Use CSS modules or Tailwind for styling
+
+## Navigation
+
+1. Use shared Nav component for consistent navigation
+2. Maintain clear visual hierarchy
+3. Show active state for current route
+4. Use semantic HTML elements
+
+## Real-time Updates
+
+1. Use WebSocket for PLC tag updates
+2. Implement reconnection logic
+3. Handle connection state gracefully
+4. Show loading and error states
+
+## Performance
+
+1. Use React.memo for expensive renders
+2. Implement proper cleanup in useEffect
+3. Lazy load routes and components
+4. Optimize images and assets
+
+## Accessibility
+
+1. Use semantic HTML
+2. Include ARIA labels
+3. Ensure keyboard navigation
+4. Maintain sufficient color contrast
+
+## Error Handling
+
+1. Implement error boundaries
+2. Show user-friendly error messages
+3. Log errors for debugging
+4. Provide fallback UI states

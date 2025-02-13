@@ -52,13 +52,6 @@ type Task struct {
 	Priority int
 }
 
-type Program struct {
-	Name     string
-	Code     string
-	Version  string
-	Modified time.Time
-}
-
 type Version struct {
 	ID        string
 	Timestamp time.Time
@@ -122,9 +115,4 @@ func (r *Runtime) executeCycle() {
 			continue
 		}
 	}
-}
-
-// Program execution stub - to be implemented
-func (p *Program) Execute() error {
-	return nil
 }

@@ -1,0 +1,52 @@
+# General Architecture Rules
+
+This document defines the high-level architecture decisions and patterns for the Inrush project.
+
+## Project Structure
+
+```
+inrush/
+├── apps/               # Application packages
+│   ├── runtime/       # Go PLC runtime
+│   ├── ui/           # Next.js web interface
+│   ├── website/      # Marketing site
+│   └── docs/         # Documentation site
+├── packages/          # Shared packages
+│   ├── protocol/     # Shared types and protocols
+│   ├── ide/          # Theia-based IDE
+│   └── ui-components/# Shared UI components
+```
+
+## Core Principles
+
+1. Use functional React components with hooks
+2. Follow monorepo structure using pnpm workspaces
+3. Maintain clear separation between UI, runtime, and IDE components
+4. Use TypeScript for all JavaScript/TypeScript code
+5. Follow Go best practices for runtime code
+
+## Routing Structure
+
+- `/` - Homepage with navigation to main sections
+- `/logic` - Theia-based PLC IDE
+- `/scada` - Real-time monitoring and control interface
+
+## Communication Patterns
+
+1. WebSocket-based real-time communication for PLC data
+2. tRPC for type-safe API communication
+3. Shared protocol types between frontend and backend
+
+## Dependencies
+
+- Node.js >= 23.6.0
+- Go >= 1.22.2
+- pnpm >= 8.15.4
+- PostgreSQL/TimescaleDB for time-series data
+
+## Development Standards
+
+1. Use ESLint and Prettier for code formatting
+2. Write unit tests for critical functionality
+3. Document public APIs and components
+4. Follow semantic versioning for packages
