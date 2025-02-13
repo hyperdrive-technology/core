@@ -1,10 +1,16 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["**/.env.*local"],
-  "pipeline": {
+  "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "build/**"]
+      "outputs": ["dist/**", ".next/**", "build/**", "lib/**"],
+      "env": ["NODE_ENV", "NEXT_PUBLIC_*"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
     },
     "test": {
       "dependsOn": ["^build"],
@@ -12,14 +18,29 @@
       "inputs": ["src/**/*.tsx", "src/**/*.ts", "test/**/*.ts", "test/**/*.tsx"]
     },
     "lint": {
-      "outputs": []
+      "outputs": ["node_modules/.cache/.eslintcache"],
+      "inputs": [
+        "src/**/*.tsx",
+        "src/**/*.ts",
+        "src/**/*.js",
+        "src/**/*.jsx",
+        "test/**/*.ts",
+        "test/**/*.tsx"
+      ]
     },
-    "dev": {
-      "cache": false,
-      "persistent": true
+    "typecheck": {
+      "outputs": ["node_modules/.cache/tsbuildinfo.json"],
+      "inputs": [
+        "src/**/*.tsx",
+        "src/**/*.ts",
+        "test/**/*.ts",
+        "test/**/*.tsx",
+        "tsconfig.json"
+      ]
     },
     "clean": {
-      "cache": false
+      "cache": false,
+      "outputs": ["dist/**", ".next/**", "build/**", "coverage/**"]
     }
   }
 }

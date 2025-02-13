@@ -1,20 +1,23 @@
-import { PLCClient } from '@inrush/ui/src/lib/plc-client';
 import { BackendApplicationContribution } from '@theia/core/lib/node/backend-application';
 import { WebSocketChannel } from '@theia/core/lib/node/messaging';
 import { injectable } from '@theia/core/shared/inversify';
+import { TheiaServer } from './theia-server';
 
 @injectable()
 export class PLCBackendContribution implements BackendApplicationContribution {
-    private plcClient: PLCClient;
+    private theiaServer: TheiaServer;
+
+    constructor() {
+        this.theiaServer = new TheiaServer();
+    }
 
     initialize() {
-        this.plcClient = new PLCClient();
-        this.plcClient.connect();
+        this.theiaServer.start();
     }
 
     onStop() {
-        if (this.plcClient) {
-            this.plcClient.disconnect();
+        if (this.theiaServer) {
+            this.theiaServer.stop();
         }
     }
 
@@ -27,17 +30,8 @@ export class PLCBackendContribution implements BackendApplicationContribution {
             ws.on('message', async (data: string) => {
                 try {
                     const message = JSON.parse(data);
-                    switch (message.type) {
-                        case 'subscribe':
-                            // Handle tag subscription
-                            break;
-                        case 'unsubscribe':
-                            // Handle tag unsubscription
-                            break;
-                        case 'write':
-                            // Handle tag write
-                            break;
-                    }
+                    // Forward messages to the Theia server
+                    this.theiaServer.handleMessage(ws, message);
                 } catch (error) {
                     console.error('Error handling WebSocket message:', error);
                 }

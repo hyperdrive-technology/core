@@ -6,15 +6,13 @@ This document defines the high-level architecture decisions and patterns for the
 
 ```
 inrush/
-├── apps/               # Application packages
+├── apps/              # Application packages
 │   ├── runtime/       # Go PLC runtime
-│   ├── ui/           # Next.js web interface
-│   ├── website/      # Marketing site
-│   └── docs/         # Documentation site
+│   ├── ui/            # Next.js web interface (t3 stack)
 ├── packages/          # Shared packages
-│   ├── protocol/     # Shared types and protocols
-│   ├── ide/          # Theia-based IDE
-│   └── ui-components/# Shared UI components
+│   ├── ide/           # Theia-based IDE
+├──  website/      # Marketing site
+├──  docs/         # Documentation site
 ```
 
 ## Core Principles
