@@ -1,0 +1,15 @@
+# Ignore node_modules
+node_modules
+
+# Don't ignore package files
+!package.json
+!pnpm-lock.yaml
+
+# Other common files to ignore
+.git
+.env
+.env.*
+.next
+dist
+build
+coverage

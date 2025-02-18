@@ -7,7 +7,7 @@ WEBSITE_DIR := apps/website
 # Tool configuration
 PNPM := pnpm
 GO := go
-DOCKER_COMPOSE := docker-compose
+DOCKER_COMPOSE := docker compose
 PRETTIER := $(PNPM) prettier
 NEXT := $(PNPM) next
 TSC := $(PNPM) tsc

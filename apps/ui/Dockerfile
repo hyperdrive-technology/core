@@ -1,31 +1,31 @@
 # Development stage
-FROM node:23-alpine
+FROM node:23.6-alpine
 
-WORKDIR /app
+WORKDIR /apps/ui
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@8.15.4 --activate
+# Install system dependencies
+RUN apk add --no-cache \
+    libc6-compat \
+    python3 \
+    make \
+    g++ \
+    gcc \
+    git \
+    linux-headers
 
-# Copy workspace files
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
-COPY apps/ui/package.json ./apps/ui/
+
+# Install pnpm using npm
+RUN npm install -g pnpm@10.4.1
+
+# Copy package files for initial install
+COPY apps/ui/package.json apps/ui/pnpm-lock.yaml ./
+
+RUN pnpm install lightningcss-linux-arm64-musl @tailwindcss/oxide-linux-arm64-musl sass-embedded-linux-arm64
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile
+RUN pnpm install
 
-# Copy source code
-COPY . .
+EXPOSE 8080
 
-# Start development server
-CMD ["pnpm", "run", "dev", "--filter", "@inrush/ui"]
-
-# Production build would be:
-# FROM node:18-alpine AS builder
-# WORKDIR /app
-# RUN corepack enable && corepack prepare pnpm@8.15.4 --activate
-# COPY . .
-# RUN pnpm install --frozen-lockfile
-# RUN pnpm run build --filter=@inrush/ui
-#
-# FROM nginx:alpine
-# COPY --from=builder /app/apps/ui/dist /usr/share/nginx/html
+# At runtime, the volume will mount over these files, but node_modules will be preserved
+CMD ["pnpm", "dev"]

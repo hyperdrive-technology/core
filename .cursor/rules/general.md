@@ -11,6 +11,10 @@ inrush/
 │   ├── ui/            # Next.js web interface (t3 stack)
 ├── packages/          # Shared packages
 │   ├── ide/           # Theia-based IDE
+├── protocol/          # Shared protocol types
+│   ├── iec61131/      # IEC 61131-3 types
+│   ├── openapi/       # Runtime types
+│   └── websocket/     # WebSocket message types
 ```
 
 ## Core Principles

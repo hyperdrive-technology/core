@@ -2,12 +2,12 @@
 Inrush is a modern, open-source PLC runtime with support for IEC 61131-3 programming languages and online changes.
 
 ## Features
-- Full support for IEC 61131-3 programming languages
+- Full support for IEC 61131-3 programming languages via Langium-based DSL
 - Real-time control and monitoring
 - Online program changes (similar to Logix)
 - WebSocket-based communication for UI updates
 - NATS-based server-to-server communication
-- Modern React-based UI
+- Modern React-based UI with Langium-powered editor
 - Extensible architecture with Langium, AsyncAPI, and OpenAPI
 - Deployment-ready with Gokrazy and Caddy for SSL
 - Comprehensive documentation
@@ -23,6 +23,10 @@ inrush/
 │   ├── api-pubsub/    # AsyncAPI definitions
 │   ├── ide/           # Theia-based IDE (TypeScript)
 │   └── iec61131/      # Langium-based DSL for IEC 61131-3
+│       ├── src/
+│       │   ├── grammar/ # Langium grammar definition
+│       │   ├── ast/     # Generated AST types
+│       │   └── main.ts  # Language server entry
 ├── docs/              # Documentation
 └── website/           # Marketing site
 ```
@@ -146,10 +150,10 @@ The web UI is built with:
 The IDE is based on Theia and provides:
 
 - A modern, browser based, extensible development environment
-- Langium-based DSL for IEC 61131-3 programming
+- Langium-based DSL for IEC 61131-3 programming with full LSP support
 - Syntax highlighting, autocompletion, and validation
-- Integration with the runtime for online changes and debugging
-- Inrush marketplace for extensions
+- AST-based program representation for online changes
+- Integration with the runtime for compilation and debugging
 
 ## Communication
 

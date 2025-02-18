@@ -1,0 +1,31 @@
+{
+  "name": "@inrush/ide",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@theia/core": "1.58.0",
+    "@theia/editor": "1.58.0",
+    "@theia/filesystem": "1.58.0",
+    "@theia/markers": "1.58.0",
+    "@theia/messages": "1.58.0",
+    "@theia/monaco": "1.58.0",
+    "@theia/navigator": "1.58.0",
+    "@theia/preferences": "1.58.0",
+    "@theia/process": "1.58.0",
+    "@theia/terminal": "1.58.0",
+    "@theia/workspace": "1.58.0",
+    "@inrush/iec61131": "0.1.0",
+    "langium": "~3.3.0"
+  },
+  "devDependencies": {
+    "@theia/cli": "latest"
+  },
+  "scripts": {
+    "prepare": "theia build --mode development",
+    "start": "theia start",
+    "watch": "theia build --watch --mode development"
+  },
+  "theia": {
+    "target": "browser"
+  }
+}
