@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { PLCEditor } from "~/components/plc/PLCEditor";
-import { api } from "~/trpc/react";
+import { trpc } from "~/trpc/react";
 
 export default function PLCPage() {
   const [currentProgram, setCurrentProgram] = useState("");
-  const updateProgram = api.plc.updateProgram.useMutation();
+  const updateProgram = trpc.plc.updateProgram.useMutation();
 
   const handleProgramChange = async (code: string) => {
     setCurrentProgram(code);

@@ -4,19 +4,6 @@
 
 1. All React components should be functional components
 2. Use TypeScript for type safety
-3. Place components in logical directories:
-   ```
-   src/
-   ├── app/              # Next.js app router pages
-   ├── components/       # Reusable components
-   │   ├── layout/      # Layout components
-   │   ├── plc/         # PLC-specific components
-   │   └── scada/       # SCADA-specific components
-   ├── lib/             # Utility functions and classes
-   ├── hooks/           # Custom React hooks
-   ├── types/           # TypeScript type definitions
-   └── trpc/            # tRPC API integration
-   ```
 
 ## State Management
 
@@ -28,9 +15,9 @@
 ## Component Guidelines
 
 1. Keep components small and focused
-2. Use TypeScript interfaces for props
+2. Use TypeScript types for props
 3. Document complex components with JSDoc
-4. Use CSS modules or Tailwind for styling
+4. Use Tailwind for styling
 
 ## Navigation
 

@@ -14,7 +14,8 @@ export default function HomePage() {
           >
             <h3 className="text-2xl font-bold">Logic Editor →</h3>
             <div className="text-lg">
-              Program your PLC using IEC 61131-3 languages with a full-featured IDE.
+              Program your PLC using IEC 61131-3 languages with a full-featured
+              IDE.
             </div>
           </a>
           <a

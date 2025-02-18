@@ -1,19 +1,23 @@
 package parser_test
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
-	"os"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/inrush-io/dsl"
-	. "github.com/inrush-io/inrush/apps/runtime/internal/parser"
+	"github.com/inrush-io/inrush/apps/runtime/internal/parser"
+	"github.com/inrush-io/inrush/apps/runtime/internal/parser/ast"
 )
 
-func TestDSL(t *testing.T) {
-	reader := bytes.NewBufferString(`
+type basicType struct {
+	typeName string
+	pos      ast.Position
+}
+
+func (t *basicType) String() string         { return t.typeName }
+func (t *basicType) Position() ast.Position { return t.pos }
+func (t *basicType) TypeName() string       { return t.typeName }
+
+func TestParser(t *testing.T) {
+	code := `
 FUNCTION_BLOCK FB_Test
     VAR_INPUT
         in1 : INT;
@@ -79,525 +83,83 @@ PROGRAM Main
     x := Func_Test(param1 := 5, param2 := 3.14);
     y := SQRT(x) + LN(fb_instance.out1);
 END_PROGRAM
-`)
+`
 
-	bufreader := bufio.NewReader(reader)
-	logfilename := "TestDSL.log"
-	logfile, fileErr := os.Create(logfilename)
-	if fileErr != nil {
-		t.Fatal("Error: Could not create log file " + logfilename + ": " + fileErr.Error())
-	}
-	ast, errs := dsl.Parse(Parse, Scan, bufreader, dsl.WithLogger(logfile))
-	logfile.Close()
-	if len(errs) != 0 {
-		t.Fail()
-		t.Error("Should report exactly 0 errors")
+	program, err := parser.Parse(code)
+	if err != nil {
+		t.Fatalf("Failed to parse program: %v", err)
 	}
 
-	astJSON, _ := json.Marshal(ast)
-	expectedNodes := []byte(`{
-  "root": {
-    "type": "ROOT",
-    "tokens": null,
-    "children": [
-      {
-        "type": "FUNCTION_BLOCK",
-        "tokens": [
-          {
-            "ID": "VARIABLE",
-            "Literal": "FB_Test"
-          }
-        ],
-        "children": [
-          {
-            "type": "VAR_BLOCK",
-            "tokens": [
-              {
-                "ID": "VAR_INPUT",
-                "Literal": "VAR_INPUT"
-              }
-            ],
-            "children": [
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "in1"
-                  },
-                  {
-                    "ID": "INT",
-                    "Literal": "INT"
-                  }
-                ],
-                "children": null
-              },
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "in2"
-                  },
-                  {
-                    "ID": "REAL",
-                    "Literal": "REAL"
-                  }
-                ],
-                "children": null
-              }
-            ]
-          },
-          {
-            "type": "VAR_BLOCK",
-            "tokens": [
-              {
-                "ID": "VAR_OUTPUT",
-                "Literal": "VAR_OUTPUT"
-              }
-            ],
-            "children": [
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "out1"
-                  },
-                  {
-                    "ID": "BOOL",
-                    "Literal": "BOOL"
-                  }
-                ],
-                "children": null
-              }
-            ]
-          },
-          {
-            "type": "VAR_BLOCK",
-            "tokens": [
-              {
-                "ID": "VAR",
-                "Literal": "VAR"
-              }
-            ],
-            "children": [
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "local1"
-                  }
-                ],
-                "children": [
-                  {
-                    "type": "VAR_TYPE",
-                    "tokens": [
-                      {
-                        "ID": "ARRAY",
-                        "Literal": "ARRAY"
-                      },
-                      {
-                        "ID": "LITERAL",
-                        "Literal": "1"
-                      },
-                      {
-                        "ID": "LITERAL",
-                        "Literal": "5"
-                      },
-                      {
-                        "ID": "OF",
-                        "Literal": "OF"
-                      },
-                      {
-                        "ID": "INT",
-                        "Literal": "INT"
-                      }
-                    ],
-                    "children": null
-                  }
-                ]
-              },
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "local2"
-                  }
-                ],
-                "children": [
-                  {
-                    "type": "VAR_TYPE",
-                    "tokens": [
-                      {
-                        "ID": "STRUCT",
-                        "Literal": "STRUCT"
-                      }
-                    ],
-                    "children": [
-                      {
-                        "type": "VAR",
-                        "tokens": [
-                          {
-                            "ID": "VARIABLE",
-                            "Literal": "x"
-                          },
-                          {
-                            "ID": "INT",
-                            "Literal": "INT"
-                          }
-                        ],
-                        "children": null
-                      },
-                      {
-                        "type": "VAR",
-                        "tokens": [
-                          {
-                            "ID": "VARIABLE",
-                            "Literal": "y"
-                          },
-                          {
-                            "ID": "REAL",
-                            "Literal": "REAL"
-                          }
-                        ],
-                        "children": null
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "type": "FUNCTION",
-        "tokens": [
-          {
-            "ID": "VARIABLE",
-            "Literal": "Func_Test"
-          },
-          {
-            "ID": "INT",
-            "Literal": "INT"
-          }
-        ],
-        "children": [
-          {
-            "type": "VAR_BLOCK",
-            "tokens": [
-              {
-                "ID": "VAR_INPUT",
-                "Literal": "VAR_INPUT"
-              }
-            ],
-            "children": [
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "param1"
-                  },
-                  {
-                    "ID": "INT",
-                    "Literal": "INT"
-                  }
-                ],
-                "children": null
-              },
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "param2"
-                  },
-                  {
-                    "ID": "REAL",
-                    "Literal": "REAL"
-                  }
-                ],
-                "children": null
-              }
-            ]
-          },
-          {
-            "type": "VAR_BLOCK",
-            "tokens": [
-              {
-                "ID": "VAR",
-                "Literal": "VAR"
-              }
-            ],
-            "children": [
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "result"
-                  },
-                  {
-                    "ID": "INT",
-                    "Literal": "INT"
-                  }
-                ],
-                "children": null
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "type": "PROGRAM",
-        "tokens": [
-          {
-            "ID": "VARIABLE",
-            "Literal": "Main"
-          }
-        ],
-        "children": [
-          {
-            "type": "VAR_BLOCK",
-            "tokens": [
-              {
-                "ID": "VAR",
-                "Literal": "VAR"
-              }
-            ],
-            "children": [
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "fb_instance"
-                  },
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "FB_Test"
-                  }
-                ],
-                "children": null
-              },
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "x"
-                  },
-                  {
-                    "ID": "INT",
-                    "Literal": "INT"
-                  }
-                ],
-                "children": null
-              },
-              {
-                "type": "VAR",
-                "tokens": [
-                  {
-                    "ID": "VARIABLE",
-                    "Literal": "y"
-                  },
-                  {
-                    "ID": "REAL",
-                    "Literal": "REAL"
-                  }
-                ],
-                "children": null
-              }
-            ]
-          },
-          {
-            "type": "STATEMENT",
-            "tokens": [
-              {
-                "ID": "VARIABLE",
-                "Literal": "fb_instance"
-              },
-              {
-                "ID": "LPAREN",
-                "Literal": "("
-              },
-              {
-                "ID": "VARIABLE",
-                "Literal": "in1"
-              },
-              {
-                "ID": "ASSIGN",
-                "Literal": ":="
-              },
-              {
-                "ID": "LITERAL",
-                "Literal": "15"
-              },
-              {
-                "ID": "COMMA",
-                "Literal": ","
-              },
-              {
-                "ID": "VARIABLE",
-                "Literal": "in2"
-              },
-              {
-                "ID": "ASSIGN",
-                "Literal": ":="
-              },
-              {
-                "ID": "LITERAL",
-                "Literal": "10.5"
-              },
-              {
-                "ID": "RPAREN",
-                "Literal": ")"
-              }
-            ],
-            "children": null
-          },
-          {
-            "type": "STATEMENT",
-            "tokens": [
-              {
-                "ID": "VARIABLE",
-                "Literal": "x"
-              },
-              {
-                "ID": "ASSIGN",
-                "Literal": ":="
-              },
-              {
-                "ID": "VARIABLE",
-                "Literal": "Func_Test"
-              },
-              {
-                "ID": "LPAREN",
-                "Literal": "("
-              },
-              {
-                "ID": "VARIABLE",
-                "Literal": "param1"
-              },
-              {
-                "ID": "ASSIGN",
-                "Literal": ":="
-              },
-              {
-                "ID": "LITERAL",
-                "Literal": "5"
-              },
-              {
-                "ID": "COMMA",
-                "Literal": ","
-              },
-              {
-                "ID": "VARIABLE",
-                "Literal": "param2"
-              },
-              {
-                "ID": "ASSIGN",
-                "Literal": ":="
-              },
-              {
-                "ID": "LITERAL",
-                "Literal": "3.14"
-              },
-              {
-                "ID": "RPAREN",
-                "Literal": ")"
-              }
-            ],
-            "children": null
-          },
-          {
-            "type": "STATEMENT",
-            "tokens": [
-              {
-                "ID": "VARIABLE",
-                "Literal": "y"
-              },
-              {
-                "ID": "ASSIGN",
-                "Literal": ":="
-              },
-              {
-                "ID": "FUNCTION",
-                "Literal": "SQRT"
-              },
-              {
-                "ID": "LPAREN",
-                "Literal": "("
-              },
-              {
-                "ID": "VARIABLE",
-                "Literal": "x"
-              },
-              {
-                "ID": "RPAREN",
-                "Literal": ")"
-              },
-              {
-                "ID": "PLUS",
-                "Literal": "+"
-              },
-              {
-                "ID": "FUNCTION",
-                "Literal": "LN"
-              },
-              {
-                "ID": "LPAREN",
-                "Literal": "("
-              },
-              {
-                "ID": "VARIABLE",
-                "Literal": "fb_instance"
-              },
-              {
-                "ID": "DOT",
-                "Literal": "."
-              },
-              {
-                "ID": "VARIABLE",
-                "Literal": "out1"
-              },
-              {
-                "ID": "RPAREN",
-                "Literal": ")"
-              }
-            ],
-            "children": null
-          }
-        ]
-      }
-    ]
-  }
-}`)
-
-	expectJSON(t, expectedNodes, astJSON)
-}
-
-// expectJSON returns an assertion function that compares the expected and
-// actual JSON payloads.
-func expectJSON(t *testing.T, expected []byte, actual []byte) {
-
-	t.Helper()
-
-	var a, e map[string]any
-	if err := json.Unmarshal(expected, &e); err != nil {
-		t.Fatalf("error unmarshaling expected json payload: %v", err)
+	// Verify program structure
+	if program.Name != "Main" {
+		t.Errorf("Expected program name to be 'Main', got %q", program.Name)
 	}
 
-	if err := json.Unmarshal(actual, &a); err != nil {
-		t.Fatalf("error unmarshaling actual json payload: %v", err)
+	if program.Type != ast.ProgramPRG {
+		t.Errorf("Expected program type to be ProgramPRG, got %v", program.Type)
 	}
 
-	if diff := cmp.Diff(e, a); diff != "" {
-		t.Errorf(diff)
+	// Verify variables
+	expectedVars := []*ast.VarDecl{
+		{Name: "fb_instance", Type: &basicType{typeName: "FB_Test"}},
+		{Name: "x", Type: &basicType{typeName: "INT"}},
+		{Name: "y", Type: &basicType{typeName: "REAL"}},
 	}
 
+	if len(program.Vars) != len(expectedVars) {
+		t.Errorf("Expected %d variables, got %d", len(expectedVars), len(program.Vars))
+	}
+
+	for i, v := range expectedVars {
+		if i >= len(program.Vars) {
+			break
+		}
+		if program.Vars[i].Name != v.Name {
+			t.Errorf("Expected variable %d name to be %q, got %q", i, v.Name, program.Vars[i].Name)
+		}
+		if program.Vars[i].Type.TypeName() != v.Type.TypeName() {
+			t.Errorf("Expected variable %d type to be %q, got %q", i, v.Type.TypeName(), program.Vars[i].Type.TypeName())
+		}
+	}
+
+	// Verify statements
+	if len(program.Body) != 3 {
+		t.Errorf("Expected 3 statements in program body, got %d", len(program.Body))
+	}
+
+	// Verify first statement (FB invocation)
+	if stmt, ok := program.Body[0].(*ast.Assignment); ok {
+		if call, ok := stmt.Value.(*ast.CallExpr); ok {
+			if call.Function != "fb_instance" {
+				t.Errorf("Expected first statement to be fb_instance call, got %q", call.Function)
+			}
+			if len(call.Args) != 2 {
+				t.Errorf("Expected fb_instance call to have 2 arguments, got %d", len(call.Args))
+			}
+		} else {
+			t.Errorf("Expected CallExpr in assignment, got %T", stmt.Value)
+		}
+	} else {
+		t.Errorf("Expected first statement to be Assignment, got %T", program.Body[0])
+	}
+
+	// Verify second statement (function call assignment)
+	if assign, ok := program.Body[1].(*ast.Assignment); ok {
+		if variable, ok := assign.Variable.(*ast.Variable); ok {
+			if variable.Name != "x" {
+				t.Errorf("Expected second statement to assign to x, got %q", variable.Name)
+			}
+		} else {
+			t.Errorf("Expected variable in assignment, got %T", assign.Variable)
+		}
+		if call, ok := assign.Value.(*ast.CallExpr); ok {
+			if call.Function != "Func_Test" {
+				t.Errorf("Expected function call to Func_Test, got %q", call.Function)
+			}
+		} else {
+			t.Errorf("Expected function call in assignment, got %T", assign.Value)
+		}
+	} else {
+		t.Errorf("Expected second statement to be Assignment, got %T", program.Body[1])
+	}
 }

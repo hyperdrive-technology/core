@@ -2,9 +2,9 @@ export type Quality = "good" | "bad" | "uncertain";
 
 export interface PLCValue {
   name: string;
-  value: number | boolean | string;
-  quality: Quality;
-  timestamp: string;
+  value: string | number | boolean;
+  quality: string;
+  timestamp: number;
 }
 
 export interface PLCProgram {

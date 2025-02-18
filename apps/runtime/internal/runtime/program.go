@@ -78,9 +78,9 @@ func (p *Program) executeStatement(stmt ast.Statement) error {
 		if err != nil {
 			return err
 		}
-		v, ok := p.vars[s.Variable.Name]
+		v, ok := p.vars[s.Variable.String()]
 		if !ok {
-			return fmt.Errorf("undefined variable: %s", s.Variable.Name)
+			return fmt.Errorf("undefined variable: %s", s.Variable.String())
 		}
 		v.Value = val
 		v.Timestamp = time.Now()

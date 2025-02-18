@@ -19,11 +19,13 @@ services:
 
   runtime:
     build:
-      context: .
-      dockerfile: apps/runtime/Dockerfile
+      context: apps/runtime
+      dockerfile: Dockerfile
+      target: builder # Use builder stage for development
     volumes:
       - ./apps/runtime:/app
       - runtime-data:/data
+      - go-cache:/root/.cache/go-build
     ports:
       - "3000:3000"  # WebSocket API
       - "2222:2222"  # PLC communication
@@ -35,6 +37,7 @@ services:
       - DB_NAME=inrush
       - DB_USER=inrush
       - DB_PASSWORD=inrush
+    command: go run ./cmd/inrush/main.go
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -46,11 +49,12 @@ services:
     volumes:
       - ./apps/ui:/app
       - /app/node_modules
+      - pnpm-store:/root/.local/share/pnpm/store
     ports:
       - "8080:8080"
     environment:
       - NODE_ENV=development
-      - VITE_PLC_WS_URL=ws://localhost:3000/ws
+      - NEXT_PUBLIC_WS_URL=ws://localhost:3000/ws
     depends_on:
       - runtime
 
@@ -81,3 +85,5 @@ services:
 volumes:
   runtime-data:
   timescaledb-data:
+  go-cache:
+  pnpm-store:

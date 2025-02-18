@@ -2,7 +2,7 @@ import { type PLCValue } from "~/types/plc";
 
 interface PLCMessage {
   type: "subscribe" | "unsubscribe" | "write" | "update";
-  payload?: any;
+  payload: unknown;
 }
 
 interface PLCSubscription {
@@ -34,7 +34,7 @@ export class PLCClient {
       try {
         const message = JSON.parse(event.data) as PLCMessage;
         if (message.type === "update") {
-          this.handleUpdate(message.payload);
+          this.handleUpdate(message.payload as PLCValue[]);
         }
       } catch (error) {
         console.error("Failed to parse WebSocket message:", error);
@@ -63,14 +63,20 @@ export class PLCClient {
     }
   }
 
-  subscribe(id: string, tags: string[], onUpdate: (values: PLCValue[]) => void) {
+  subscribe(
+    id: string,
+    tags: string[],
+    onUpdate: (values: PLCValue[]) => void,
+  ) {
     this.subscriptions.set(id, { tags, onUpdate });
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: "subscribe",
-        payload: { tags }
-      }));
+      this.ws.send(
+        JSON.stringify({
+          type: "subscribe",
+          payload: { tags },
+        }),
+      );
     }
 
     return () => this.unsubscribe(id);
@@ -79,27 +85,31 @@ export class PLCClient {
   unsubscribe(id: string) {
     const subscription = this.subscriptions.get(id);
     if (subscription && this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: "unsubscribe",
-        payload: { tags: subscription.tags }
-      }));
+      this.ws.send(
+        JSON.stringify({
+          type: "unsubscribe",
+          payload: { tags: subscription.tags },
+        }),
+      );
     }
     this.subscriptions.delete(id);
   }
 
   writeTag(name: string, value: number | boolean | string) {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: "write",
-        payload: { tag: name, value }
-      }));
+      this.ws.send(
+        JSON.stringify({
+          type: "write",
+          payload: { tag: name, value },
+        }),
+      );
     }
   }
 
   private handleUpdate(values: PLCValue[]) {
     for (const subscription of this.subscriptions.values()) {
-      const relevantValues = values.filter(v =>
-        subscription.tags.includes(v.name)
+      const relevantValues = values.filter((v) =>
+        subscription.tags.includes(v.name),
       );
       if (relevantValues.length > 0) {
         subscription.onUpdate(relevantValues);
@@ -109,10 +119,12 @@ export class PLCClient {
 
   private resubscribeAll() {
     for (const subscription of this.subscriptions.values()) {
-      this.ws?.send(JSON.stringify({
-        type: "subscribe",
-        payload: { tags: subscription.tags }
-      }));
+      this.ws?.send(
+        JSON.stringify({
+          type: "subscribe",
+          payload: { tags: subscription.tags },
+        }),
+      );
     }
   }
 

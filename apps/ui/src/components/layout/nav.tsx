@@ -14,13 +14,21 @@ export function Nav({ currentPath }: NavProps) {
         <div className="flex gap-4">
           <a
             href="/logic"
-            className={currentPath === "/logic" ? "text-blue-600 font-medium" : "text-gray-600 hover:text-gray-900"}
+            className={
+              currentPath === "/logic"
+                ? "text-blue-600 font-medium"
+                : "text-gray-600 hover:text-gray-900"
+            }
           >
             Logic Editor
           </a>
           <a
             href="/scada"
-            className={currentPath === "/scada" ? "text-blue-600 font-medium" : "text-gray-600 hover:text-gray-900"}
+            className={
+              currentPath === "/scada"
+                ? "text-blue-600 font-medium"
+                : "text-gray-600 hover:text-gray-900"
+            }
           >
             SCADA
           </a>

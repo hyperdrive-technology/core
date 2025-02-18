@@ -1,36 +1,54 @@
-import { WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import { type PLCValue } from "~/types/plc";
 import { DEFAULT_WINDOW_CONFIG, THEIA_CONFIG } from "./config";
 
-interface TheiaMessage {
-  type: "subscribe" | "unsubscribe" | "write" | "update" | "config";
-  payload?: any;
+interface TheiaConfig {
+  window: typeof DEFAULT_WINDOW_CONFIG;
+  theia: typeof THEIA_CONFIG;
 }
 
+interface TheiaSubscribePayload {
+  tags: string[];
+}
+
+interface TheiaWritePayload {
+  tag: string;
+  value: number | boolean | string;
+}
+
+type TheiaPayload =
+  | { type: "subscribe"; payload: TheiaSubscribePayload }
+  | { type: "unsubscribe"; payload: TheiaSubscribePayload }
+  | { type: "write"; payload: TheiaWritePayload }
+  | { type: "update"; payload: PLCValue[] }
+  | { type: "config"; payload: TheiaConfig };
+
 export class TheiaServer {
-  private wss: WebSocket.Server | null = null;
+  private wss: WebSocketServer | null = null;
   private clients: Set<WebSocket> = new Set();
 
   constructor(private readonly port: number = 3000) {}
 
   start() {
-    this.wss = new WebSocket.Server({ port: this.port });
+    this.wss = new WebSocketServer({ port: this.port });
 
     this.wss.on("connection", (ws: WebSocket) => {
       this.clients.add(ws);
 
       // Send initial configuration
-      ws.send(JSON.stringify({
-        type: "config",
-        payload: {
-          window: DEFAULT_WINDOW_CONFIG,
-          theia: THEIA_CONFIG
-        }
-      }));
+      ws.send(
+        JSON.stringify({
+          type: "config",
+          payload: {
+            window: DEFAULT_WINDOW_CONFIG,
+            theia: THEIA_CONFIG,
+          },
+        }),
+      );
 
       ws.on("message", (data: string) => {
         try {
-          const message = JSON.parse(data) as TheiaMessage;
+          const message = JSON.parse(data) as TheiaPayload;
           this.handleMessage(ws, message);
         } catch (error) {
           console.error("Failed to parse WebSocket message:", error);
@@ -52,7 +70,7 @@ export class TheiaServer {
     }
   }
 
-  handleMessage(ws: WebSocket, message: TheiaMessage) {
+  handleMessage(ws: WebSocket, message: TheiaPayload) {
     switch (message.type) {
       case "subscribe":
         // Handle tag subscription
@@ -65,17 +83,19 @@ export class TheiaServer {
         break;
       case "update":
         // Handle tag update
-        this.broadcastUpdate(message.payload as PLCValue[]);
+        this.broadcastUpdate(message.payload);
         break;
       case "config":
         // Handle config request
-        ws.send(JSON.stringify({
-          type: "config",
-          payload: {
-            window: DEFAULT_WINDOW_CONFIG,
-            theia: THEIA_CONFIG
-          }
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "config",
+            payload: {
+              window: DEFAULT_WINDOW_CONFIG,
+              theia: THEIA_CONFIG,
+            },
+          }),
+        );
         break;
     }
   }
@@ -83,7 +103,7 @@ export class TheiaServer {
   private broadcastUpdate(values: PLCValue[]) {
     const message = JSON.stringify({
       type: "update",
-      payload: values
+      payload: values,
     });
 
     for (const client of this.clients) {

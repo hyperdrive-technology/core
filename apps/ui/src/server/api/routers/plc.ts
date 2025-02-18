@@ -47,10 +47,12 @@ export const plcRouter = createTRPCRouter({
     }),
 
   writeTag: publicProcedure
-    .input(z.object({
-      name: z.string(),
-      value: z.union([z.number(), z.boolean(), z.string()]),
-    }))
+    .input(
+      z.object({
+        name: z.string(),
+        value: z.union([z.number(), z.boolean(), z.string()]),
+      }),
+    )
     .mutation(async ({ input }) => {
       // TODO: Implement tag write
       console.log("Writing tag:", input.name, input.value);

@@ -1,42 +1,38 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache git gcc musl-dev
+RUN apk add --no-cache git
 
 # Copy go.mod and go.sum
-COPY apps/runtime/go.mod apps/runtime/go.sum ./
+COPY go.mod go.sum ./
 
 # Download dependencies
 RUN go mod download
 
 # Copy source code
-COPY apps/runtime/cmd ./cmd
-COPY apps/runtime/internal ./internal
+COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o inrush ./cmd/inrush
+# Build the application with static linking
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags='-w -s -extldflags "-static"' -o inrush ./cmd/inrush
 
 # Final stage
-FROM alpine:latest
+FROM scratch
 
-WORKDIR /app
-
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
-
-# Copy binary from builder
-COPY --from=builder /app/inrush .
-
-# Create data directory
-RUN mkdir -p /data
+# Copy timezone data from builder
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+# Copy SSL certificates from builder
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Copy the binary
+COPY --from=builder /app/inrush /inrush
 
 # Set environment variables
-ENV GO_ENV=production \
-    INRUSH_DATA_DIR=/data
+ENV GO_ENV=production
 
+# Expose ports
 EXPOSE 3000 2222
 
-CMD ["./inrush"]
+# Run the binary
+ENTRYPOINT ["/inrush"]

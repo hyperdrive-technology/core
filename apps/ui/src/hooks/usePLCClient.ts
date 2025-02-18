@@ -29,24 +29,23 @@ export function usePLCClient() {
 export function usePLCSubscription(tags: string[]) {
   const client = usePLCClient();
   const [values, setValues] = useState<PLCValue[]>([]);
+  const tagsKey = tags.join(",");
 
   useEffect(() => {
-    const unsubscribe = client.subscribe(
-      tags.join(","),
-      tags,
-      (newValues) => setValues(prev => {
-        const updated = new Map(prev.map(v => [v.name, v]));
+    const unsubscribe = client.subscribe(tagsKey, tags, (newValues) =>
+      setValues((prev) => {
+        const updated = new Map(prev.map((v) => [v.name, v]));
         for (const value of newValues) {
           updated.set(value.name, value);
         }
         return Array.from(updated.values());
-      })
+      }),
     );
 
     return () => {
       unsubscribe();
     };
-  }, [client, tags.join(",")]);
+  }, [client, tagsKey, tags]);
 
   return values;
 }

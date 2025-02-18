@@ -11,8 +11,6 @@ inrush/
 │   ├── ui/            # Next.js web interface (t3 stack)
 ├── packages/          # Shared packages
 │   ├── ide/           # Theia-based IDE
-├──  website/      # Marketing site
-├──  docs/         # Documentation site
 ```
 
 ## Core Principles
@@ -40,7 +38,7 @@ inrush/
 - Node.js >= 23.6.0
 - Go >= 1.22.2
 - pnpm >= 8.15.4
-- PostgreSQL/TimescaleDB for time-series data
+- SQLite for database
 
 ## Development Standards
 

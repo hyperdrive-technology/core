@@ -1,7 +1,5 @@
-'use client';
-
 import * as React from "react";
-import { trpc } from "~/trpc/react";
+import { api } from "~/trpc/react";
 
 interface PLCEditorProps {
   initialCode?: string;
@@ -9,8 +7,8 @@ interface PLCEditorProps {
 }
 
 export function PLCEditor({ initialCode = "", onChange }: PLCEditorProps) {
-  const startServer = trpc.logic.startServer.useMutation();
-  const stopServer = trpc.logic.stopServer.useMutation();
+  const startServer = api.logic.startServer.useMutation();
+  const stopServer = api.logic.stopServer.useMutation();
 
   // Handle code changes
   const handleCodeChange = React.useCallback(
