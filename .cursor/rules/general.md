@@ -40,9 +40,9 @@ inrush/
 ## Dependencies
 
 - Node.js >= 23.6.0
-- Go >= 1.22.2
-- pnpm >= 8.15.4
-- SQLite for database
+- Go >= 1.24.0
+- pnpm >= 10.4.0
+- InfluxDB for database
 
 ## Development Standards
 

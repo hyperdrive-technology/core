@@ -1,31 +1,16 @@
-# Development stage
 FROM node:23.6-alpine
 
-WORKDIR /apps/ui
-
-# Install system dependencies
-RUN apk add --no-cache \
-    libc6-compat \
-    python3 \
-    make \
-    g++ \
-    gcc \
-    git \
-    linux-headers
-
-
 # Install pnpm using npm
-RUN npm install -g pnpm@10.4.1
+RUN npm install -g pnpm
 
-# Copy package files for initial install
-COPY apps/ui/package.json apps/ui/pnpm-lock.yaml ./
+WORKDIR /app
 
-RUN pnpm install lightningcss-linux-arm64-musl @tailwindcss/oxide-linux-arm64-musl sass-embedded-linux-arm64
+# We'll mount the source code and install dependencies through compose
+# Just set up the initial workspace
+COPY package.json ./
 
-# Install dependencies
-RUN pnpm install
+# Expose Vite's dev server port
+EXPOSE 5173
 
-EXPOSE 8080
-
-# At runtime, the volume will mount over these files, but node_modules will be preserved
-CMD ["pnpm", "dev"]
+# Use development mode with hot reloading
+CMD ["pnpm", "dev", "--host"]

@@ -17,7 +17,7 @@ Inrush is a modern, open-source PLC runtime with support for IEC 61131-3 program
 inrush/
 ├── apps/
 │   ├── runtime/       # PLC runtime (Go)
-│   └── ui/            # IDE + SCADA UI (TypeScript)
+│   └── ui/            # IDE + SCADA UI (TanStack Start + tRPC + Shadcn UI)
 ├── packages/
 │   ├── api/           # OpenAPI definitions
 │   ├── api-pubsub/    # AsyncAPI definitions
@@ -141,8 +141,9 @@ The PLC runtime is written in Go and provides:
 The web UI is built with:
 
 - React
-- React Router v7
-- TailwindCSS
+- TanStack Start
+- tRPC
+- Shadcn UI
 - WebSocket communication for real-time updates
 - Typed API (defined in @inrush/api)
 
@@ -194,7 +195,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 - IEC 61131-3 Standard
-- React Router (https://reactrouter.com/)
+- TanStack Start (https://tanstack.com/start/latest)
 - Langium (https://langium.org/)
 - AsyncAPI (https://www.asyncapi.com/)
 - OpenAPI (https://www.openapis.org/)
@@ -203,3 +204,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Gokrazy (https://gokrazy.org/)
 - Caddy (https://caddyserver.com/)
 - Quicktype (https://quicktype.io/)
+- Shadcn UI (https://ui.shadcn.com/)
+- Lucide (https://lucide.dev/)
+- Tailwind CSS (https://tailwindcss.com/)
+- InfluxDB / Telegraf (https://influxdata.com/)

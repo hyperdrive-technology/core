@@ -4,6 +4,7 @@
 
 1. All React components should be functional components
 2. Use TypeScript for type safety
+3. Use TanStack Start for integration with TanStack Query, tRPC, and Shadcn UI
 
 ## State Management
 
