@@ -1,9 +1,15 @@
 // app/routes/index.tsx
 import { Navbar } from "@/components/navbar"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { createFileRoute } from "@tanstack/react-router"
+import { Textarea } from "@/components/ui/textarea"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { ArrowUpDown, MoreHorizontal, Plus } from "lucide-react"
+import { useState } from "react"
+import { createProject } from "../server/create-project.server"
 
 interface Project {
   id: string
@@ -33,6 +39,47 @@ export const Route = createFileRoute('/')({
 })
 
 function HomePage() {
+  const navigate = useNavigate();
+  const [isCreating, setIsCreating] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCreateProject = async () => {
+    if (!projectName.trim()) {
+      setError("Project name is required");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const result = await createProject({
+        data: {
+          name: projectName,
+          description: projectDescription,
+        }
+      });
+
+      // Navigate to the new project using string template
+      // @ts-ignore - temporary fix for route type issue
+      navigate({ to: `/logic/${result.id}` });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create project");
+      setIsLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setProjectName("");
+    setProjectDescription("");
+    setError(null);
+    setIsCreating(false);
+    setIsLoading(false);
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Navbar version="0.1.0" isConnected={true} />
@@ -40,7 +87,7 @@ function HomePage() {
       <main className="flex-1 container mx-auto max-w-4xl p-8 mt-24">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold">Projects</h1>
-          <Button>
+          <Button onClick={() => setIsCreating(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Create New Project
           </Button>
@@ -103,7 +150,8 @@ function HomePage() {
                             <Button
                               variant="ghost"
                               className="flex items-center justify-start px-4 py-2 hover:bg-muted"
-                              onClick={() => console.log(`Opening project ${project.id}`)}
+                              // @ts-ignore - temporary fix for route type issue
+                              onClick={() => navigate({ to: `/logic/${project.id}` })}
                             >
                               Open
                             </Button>
@@ -131,13 +179,65 @@ function HomePage() {
             <p className="text-muted-foreground mb-4">
               Create your first project to get started
             </p>
-            <Button>
+            <Button onClick={() => setIsCreating(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Create New Project
             </Button>
           </div>
         )}
       </main>
+
+      {/* New Project Dialog */}
+      <Dialog open={isCreating} onOpenChange={(open) => {
+        if (!open) resetForm();
+        setIsCreating(open);
+      }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Create New Project</DialogTitle>
+            <DialogDescription>
+              Enter the details for your new project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="name" className="text-right">
+                Name
+              </Label>
+              <Input
+                id="name"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                className="col-span-3"
+                placeholder="My Project"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="description" className="text-right">
+                Description
+              </Label>
+              <Textarea
+                id="description"
+                value={projectDescription}
+                onChange={(e) => setProjectDescription(e.target.value)}
+                className="col-span-3"
+                placeholder="Project description (optional)"
+              />
+            </div>
+            {error && (
+              <div className="text-destructive text-sm mt-2">{error}</div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={resetForm}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateProject} disabled={isLoading}>
+              {isLoading ? "Creating..." : "Create Project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

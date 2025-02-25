@@ -1,0 +1,29 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../dsl"
+		},
+		{
+			"path": "../inrush-core"
+		},
+		{
+			"path": "../inrush-io/theia"
+		},
+		{
+			"path": "../inrush-io/arduino-ide"
+		},
+		{
+			"path": "../inrush-io/langium"
+		},
+		{
+			"path": "../inrush-io/eclipse-theia-examples"
+		},
+		{
+			"path": "../inrush-io/router"
+		}
+	],
+	"settings": {}
+}
