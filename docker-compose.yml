@@ -24,7 +24,7 @@ services:
 
   ui:
     build:
-      context: apps/ui
+      context: ./apps/ui
       dockerfile: Dockerfile
     volumes:
       - ./apps/ui:/app
@@ -34,9 +34,22 @@ services:
     environment:
       - NODE_ENV=development
       - VITE_WS_URL=ws://localhost:3000/ws
+      - VITE_THEIA_URL=http://localhost:3030
     depends_on:
       - runtime
+      - theia
     command: sh -c "pnpm install && pnpm dev --host"
+
+  # Theia IDE service
+  theia:
+    build:
+      context: ./apps/theia/browser-app
+      dockerfile: Dockerfile
+    volumes:
+      - ./apps/theia/workspace:/home/project:cached
+    ports:
+      - "3030:3000"  # Map Theia to port 3030 on host
+    restart: unless-stopped
 
 volumes:
   runtime-data:

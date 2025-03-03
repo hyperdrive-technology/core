@@ -7,12 +7,13 @@
     "dev": "vinxi dev",
     "build": "vinxi build",
     "start": "vinxi start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "langium:generate": "langium generate"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.4.1",
+  "packageManager": "pnpm@10.5.2",
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-label": "^2.1.2",
@@ -22,34 +23,55 @@
     "@radix-ui/react-separator": "^1.1.2",
     "@radix-ui/react-slot": "^1.1.2",
     "@radix-ui/react-tabs": "^1.1.3",
-    "@tailwindcss/postcss": "^4.0.7",
-    "@tanstack/react-query": "^5.66.7",
-    "@tanstack/react-query-devtools": "^5.66.7",
-    "@tanstack/react-router": "^1.111.7",
-    "@tanstack/router-devtools": "^1.106.0",
-    "@tanstack/router-vite-plugin": "^1.106.0",
-    "@tanstack/start": "^1.107.0",
-    "@trpc/client": "^10.45.2",
-    "@trpc/react-query": "^10.45.2",
-    "@trpc/server": "^10.45.2",
+    "@tailwindcss/postcss": "^4.0.9",
+    "@tanstack/react-query": "^5.66.9",
+    "@tanstack/react-query-devtools": "^5.66.9",
+    "@tanstack/react-router": "^1.111.11",
+    "@tanstack/router-devtools": "^1.111.11",
+    "@tanstack/router-vite-plugin": "^1.111.11",
+    "@tanstack/start": "^1.111.11",
+    "@trpc/client": "11.0.0-rc.808",
+    "@trpc/react-query": "11.0.0-rc.808",
+    "@trpc/server": "11.0.0-rc.808",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "langium": "~3.3.1",
     "lucide-react": "^0.475.0",
     "postcss": "^8.5.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tailwind-merge": "^3.0.1",
-    "tailwindcss": "^4.0.7",
+    "reflect-metadata": "^0.2.2",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss": "^4.0.9",
     "tailwindcss-animate": "^1.0.7",
     "vinxi": "^0.5.3",
-    "vite": "^6.1.1",
-    "zod": "^3.24.2"
+    "vite": "^6.2.0",
+    "vscode-languageserver": "~9.0.1",
+    "zod": "^3.24.2",
+    "@monaco-editor/react": "^4.6.0",
+    "monaco-editor": "^0.45.0",
+    "re-resizable": "^6.9.11"
   },
   "devDependencies": {
+    "@theia/cli": "1.58.3",
+    "@types/node": "^22.13.5",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "langium-cli": "~3.3.0",
     "typescript": "^5.7.3",
     "vite-tsconfig-paths": "^5.1.4"
+  },
+  "theia": {
+    "target": "browser",
+    "frontend": {
+      "config": {
+        "applicationName": "Inrush IDE",
+        "preferences": {
+          "files.enableTrash": false
+        }
+      }
+    }
   }
 }

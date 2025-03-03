@@ -12,7 +12,6 @@ interface StructuredTextEditorProps {
 }
 
 export function StructuredTextEditor({
-  projectId,
   initialCode,
   pouType,
   pouName,

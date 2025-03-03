@@ -8,6 +8,9 @@ const CreateProjectSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
+// Infer the input type from the schema
+type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
+
 // Response type for the created project
 export interface CreateProjectResponse {
   id: string;
@@ -20,7 +23,7 @@ export interface CreateProjectResponse {
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
 export const createProject = createServerFn()
-  .validator((input) => CreateProjectSchema.parse(input))
+  .validator((input: CreateProjectInput) => CreateProjectSchema.parse(input))
   .handler(async ({ data }) => {
     const { name, description, tags = [] } = data;
 

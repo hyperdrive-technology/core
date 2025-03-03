@@ -11,10 +11,17 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as EditorImport } from './routes/editor'
 import { Route as IndexImport } from './routes/index'
 import { Route as LogicProjectIdImport } from './routes/logic/$projectId'
 
 // Create/Update Routes
+
+const EditorRoute = EditorImport.update({
+  id: '/editor',
+  path: '/editor',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const IndexRoute = IndexImport.update({
   id: '/',
@@ -39,6 +46,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
+    '/editor': {
+      id: '/editor'
+      path: '/editor'
+      fullPath: '/editor'
+      preLoaderRoute: typeof EditorImport
+      parentRoute: typeof rootRoute
+    }
     '/logic/$projectId': {
       id: '/logic/$projectId'
       path: '/logic/$projectId'
@@ -53,36 +67,41 @@ declare module '@tanstack/react-router' {
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/editor': typeof EditorRoute
   '/logic/$projectId': typeof LogicProjectIdRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/editor': typeof EditorRoute
   '/logic/$projectId': typeof LogicProjectIdRoute
 }
 
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
+  '/editor': typeof EditorRoute
   '/logic/$projectId': typeof LogicProjectIdRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/logic/$projectId'
+  fullPaths: '/' | '/editor' | '/logic/$projectId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/logic/$projectId'
-  id: '__root__' | '/' | '/logic/$projectId'
+  to: '/' | '/editor' | '/logic/$projectId'
+  id: '__root__' | '/' | '/editor' | '/logic/$projectId'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  EditorRoute: typeof EditorRoute
   LogicProjectIdRoute: typeof LogicProjectIdRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  EditorRoute: EditorRoute,
   LogicProjectIdRoute: LogicProjectIdRoute,
 }
 
@@ -97,11 +116,15 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
+        "/editor",
         "/logic/$projectId"
       ]
     },
     "/": {
       "filePath": "index.tsx"
+    },
+    "/editor": {
+      "filePath": "editor.tsx"
     },
     "/logic/$projectId": {
       "filePath": "logic/$projectId.tsx"

@@ -1,0 +1,41 @@
+---
+description: React Component Guidelines
+globs: ["**/*.tsx", "**/*.jsx", "**/components/**/*.ts", "**/components/**/*.js"]
+---
+
+# React Component Guidelines
+
+## Functional Components
+
+- Always use functional components instead of class components
+- Use React hooks for state management and side effects
+- Embrace the functional programming paradigm
+
+## Hook Usage
+
+- Prefer useState for local component state
+- Use useEffect for side effects with proper cleanup
+- Implement custom hooks for reusable logic
+- Use useCallback for memoized callbacks
+- Apply useMemo for expensive calculations
+
+## Component Structure
+
+- Keep components small and focused on a single responsibility
+- Use composition over inheritance
+- Extract reusable logic into custom hooks
+- Maintain a clear props interface with TypeScript
+
+## State Management
+
+- Prefer local component state when possible
+- Use context for shared state between related components
+- Avoid prop drilling by using context or composition
+- Consider state management libraries only when necessary
+
+## Performance Optimization
+
+- Use React.memo for pure functional components
+- Implement useCallback for event handlers passed to child components
+- Apply useMemo for expensive computations
+- Avoid unnecessary re-renders by structuring state properly 

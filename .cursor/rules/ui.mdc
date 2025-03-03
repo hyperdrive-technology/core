@@ -1,3 +1,9 @@
+---
+description: UI Architecture Rules for React Components
+globs: ["**/*.tsx", "**/*.jsx", "**/components/**/*.ts", "**/components/**/*.js"]
+alwaysApply: false
+---
+
 # UI Architecture Rules
 
 ## Component Structure
@@ -19,6 +25,7 @@
 2. Use TypeScript types for props
 3. Document complex components with JSDoc
 4. Use Tailwind for styling
+5. Do not allow downgrading of dependencies
 
 ## Navigation
 

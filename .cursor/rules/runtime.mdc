@@ -1,3 +1,8 @@
+---
+description: Runtime Architecture Rules for Go PLC Runtime
+globs: ["**/runtime/**/*.go", "**/cmd/**/*.go", "**/pkg/**/*.go", "**/internal/**/*.go"]
+---
+
 # Runtime Architecture Rules
 
 ## Code Organization
