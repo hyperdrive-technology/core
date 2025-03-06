@@ -6,6 +6,7 @@ import {
   Scripts,
 } from '@tanstack/react-router';
 
+import { ThemeProvider } from '@/components/ui/theme-provider';
 import appCss from '@/styles/app.css?url';
 
 export const Route = createRootRoute({
@@ -51,14 +52,16 @@ export const Route = createRootRoute({
 
 function RootDocument() {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="light" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <HeadContent />
       </head>
       <body suppressHydrationWarning>
-        <Outlet />
+        <ThemeProvider defaultTheme="light" storageKey="inrush-ui-theme">
+          <Outlet />
+        </ThemeProvider>
         <Scripts />
       </body>
     </html>

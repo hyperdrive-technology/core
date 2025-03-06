@@ -1,6 +1,16 @@
 import { Link } from '@tanstack/react-router';
-import { Code, Home, LayoutDashboard, Search, Settings } from 'lucide-react';
+import {
+  ChevronLeft,
+  Code,
+  Home,
+  LayoutDashboard,
+  Moon,
+  Search,
+  Settings,
+  Sun,
+} from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import {
   Sidebar,
   SidebarContent,
@@ -12,7 +22,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from '@/components/ui/sidebar';
+import { useTheme } from '@/components/ui/theme-provider';
 
 // Menu items
 const mainItems = [
@@ -47,12 +59,35 @@ const utilityItems = [
 ];
 
 export function AppSidebar() {
+  const { toggleSidebar, state } = useSidebar();
+
   return (
-    <Sidebar>
-      <SidebarHeader className="p-4">
-        <div className="flex items-center space-x-2">
-          <span className="text-xl font-bold">Inrush</span>
-          <span className="text-xs bg-muted px-1.5 py-0.5 rounded">v0.1.0</span>
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="py-2 px-2 items-center justify-center">
+        <div className="flex items-center justify-between w-full">
+          {state !== 'collapsed' && (
+            <div className="flex items-center gap-2 px-2">
+              <span className="text-xl font-bold group-data-[collapsible=icon]:data-[state=closed]:hidden">
+                Inrush
+              </span>
+              <span className="text-xs bg-muted px-1.5 py-0.5 rounded group-data-[collapsible=icon]:data-[state=closed]:hidden">
+                v0.1.0
+              </span>
+            </div>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSidebar}
+            className="h-8 w-8 rounded-md"
+            title={
+              state === 'collapsed' ? 'Expand sidebar' : 'Collapse sidebar'
+            }
+          >
+            <ChevronLeft
+              className={`h-4 w-4 ${state === 'collapsed' ? 'rotate-180' : ''}`}
+            />
+          </Button>
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -92,12 +127,44 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="p-4">
-        <div className="flex items-center space-x-2">
-          <div className="h-2 w-2 rounded-full bg-green-500" />
-          <span className="text-xs text-muted-foreground">Connected</span>
+      <SidebarFooter className="p-2">
+        <div className="flex items-center space-x-1.5 px-2">
+          <div className="size-4 flex items-center justify-center">
+            <div className="size-2 rounded-full bg-green-500" />
+          </div>
+          {state !== 'collapsed' && (
+            <span className="text-sm group-data-[collapsible=icon]:data-[state=closed]:hidden">
+              Connected
+            </span>
+          )}
+        </div>
+        <div className="flex items-center">
+          <ThemeToggle />
         </div>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  const { state } = useSidebar();
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+      title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+      className="w-full rounded-md justify-start px-2"
+    >
+      <span className="sr-only">Toggle theme</span>
+      <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+      <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+      {state !== 'collapsed' && (
+        <span className="text-sm font-normal">
+          {theme === 'light' ? 'Dark' : 'Light'}
+        </span>
+      )}
+    </Button>
   );
 }

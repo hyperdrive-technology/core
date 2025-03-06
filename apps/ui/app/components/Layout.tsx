@@ -12,7 +12,7 @@ export function Layout({ children }: LayoutProps) {
       <div className="min-h-screen bg-background flex flex-1">
         <AppSidebar />
         <div className="flex-1 flex flex-col">
-          <main className="flex-1 p-4">
+          <main className="flex-1">
             <SidebarTrigger className="lg:hidden mb-4" />
             {children}
           </main>

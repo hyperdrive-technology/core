@@ -22,7 +22,7 @@ export const Route = createFileRoute('/_app/editor')({
 
 function EditorPage() {
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-screen flex flex-col">
       <MonacoEditor />
     </div>
   );

@@ -10,5 +10,7 @@ export * from './navigation-menu';
 export * from './popover';
 export * from './select';
 export * from './separator';
+export * from './sidebar';
 export * from './tabs';
 export * from './textarea';
+export * from './theme-provider';

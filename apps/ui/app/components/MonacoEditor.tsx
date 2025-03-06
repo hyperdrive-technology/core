@@ -126,7 +126,7 @@ const FileExplorer: React.FC<{
   selectedFileId: string | null;
 }> = ({ files, onSelectFile, selectedFileId }) => {
   return (
-    <div className="h-full overflow-y-auto border-r dark:border-gray-700 bg-white dark:bg-gray-900">
+    <div className="h-full overflow-y-auto dark:border-gray-700 bg-white dark:bg-gray-900">
       <div className="p-2 font-semibold border-b dark:border-gray-700">
         Files
       </div>
@@ -234,10 +234,61 @@ const MonacoEditor: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
 
+  // Get the current theme from the DOM to avoid SSR issues
+  const getCurrentTheme = () => {
+    if (typeof window !== 'undefined') {
+      return document.documentElement.classList.contains('dark')
+        ? 'vs-dark'
+        : 'vs';
+    }
+    return 'vs'; // Default to light theme for SSR
+  };
+
+  const [monacoTheme, setMonacoTheme] = useState(getCurrentTheme());
+
+  // Update Monaco theme when the document theme changes
+  useEffect(() => {
+    const updateMonacoTheme = () => {
+      const newTheme = document.documentElement.classList.contains('dark')
+        ? 'vs-dark'
+        : 'vs';
+      setMonacoTheme(newTheme);
+
+      // Update the editor theme if it exists
+      if (monacoRef.current && editorRef.current) {
+        monacoRef.current.editor.setTheme(newTheme);
+      }
+    };
+
+    // Set initial theme
+    updateMonacoTheme();
+
+    // Create a mutation observer to watch for theme changes
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (
+          mutation.attributeName === 'class' &&
+          mutation.target === document.documentElement
+        ) {
+          updateMonacoTheme();
+        }
+      });
+    });
+
+    // Start observing
+    observer.observe(document.documentElement, { attributes: true });
+
+    // Clean up
+    return () => observer.disconnect();
+  }, []);
+
   // Handle editor mounting
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+
+    // Set the initial theme
+    monaco.editor.setTheme(monacoTheme);
 
     // Configure Monaco if needed
     monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
@@ -349,10 +400,10 @@ const MonacoEditor: React.FC = () => {
             height="100%"
             defaultLanguage="javascript"
             defaultValue=""
-            theme="vs-dark"
+            theme={monacoTheme}
             onMount={handleEditorDidMount}
             options={{
-              minimap: { enabled: true },
+              minimap: { enabled: false },
               scrollBeyondLastLine: false,
               fontFamily: 'JetBrains Mono, monospace',
               fontSize: 14,
