@@ -1,6 +1,12 @@
 import { cn } from '@/lib/utils';
 import Editor, { Monaco, OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, FileIcon, FolderIcon } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  FileIcon,
+  FolderIcon,
+  X,
+} from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { Resizable } from 're-resizable';
 import React, { useEffect, useRef, useState } from 'react';
@@ -145,6 +151,39 @@ const FileExplorer: React.FC<{
   );
 };
 
+// Tab Component
+const EditorTab: React.FC<{
+  file: FileNode;
+  isActive: boolean;
+  onClick: () => void;
+  onClose: () => void;
+}> = ({ file, isActive, onClick, onClose }) => {
+  const handleClose = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClose();
+  };
+
+  return (
+    <div
+      className={cn(
+        'flex items-center px-3 py-2 border-r dark:border-gray-700 cursor-pointer select-none',
+        isActive
+          ? 'bg-white dark:bg-gray-800 border-b-2 border-b-blue-500'
+          : 'bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800',
+      )}
+      onClick={onClick}
+    >
+      <FileIcon size={14} className="mr-2 text-gray-500" />
+      <span className="mr-2">{file.name}</span>
+      <X
+        size={14}
+        className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+        onClick={handleClose}
+      />
+    </div>
+  );
+};
+
 // Custom hook for language client integration
 function useLanguageClient(
   monaco: Monaco | null,
@@ -231,8 +270,8 @@ const MonacoEditor: React.FC = () => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const [files, setFiles] = useState<FileNode[]>(initialFiles);
-  const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [openFiles, setOpenFiles] = useState<FileNode[]>([]);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
 
   // Get the current theme from the DOM to avoid SSR issues
   const getCurrentTheme = () => {
@@ -309,11 +348,22 @@ const MonacoEditor: React.FC = () => {
   // Use our custom language client hook
   useLanguageClient(monacoRef.current, editorRef.current);
 
+  // Get active file
+  const activeFile = openFiles.find((file) => file.id === activeFileId) || null;
+
   // Handle file selection
   const handleSelectFile = (node: FileNode) => {
     if (!node.isFolder) {
-      setSelectedFile(node);
-      setSelectedFileId(node.id);
+      // Check if file is already open
+      const isFileOpen = openFiles.some((file) => file.id === node.id);
+
+      if (!isFileOpen) {
+        // Add to open files
+        setOpenFiles((prev) => [...prev, node]);
+      }
+
+      // Set as active file
+      setActiveFileId(node.id);
 
       // Update editor content
       if (editorRef.current) {
@@ -341,14 +391,39 @@ const MonacoEditor: React.FC = () => {
     }
   };
 
+  // Handle tab click
+  const handleTabClick = (fileId: string) => {
+    const file = openFiles.find((f) => f.id === fileId);
+    if (file) {
+      handleSelectFile(file);
+    }
+  };
+
+  // Handle tab close
+  const handleTabClose = (fileId: string) => {
+    // Remove from open files
+    setOpenFiles((prev) => prev.filter((file) => file.id !== fileId));
+
+    // If closing the active file, activate another file if available
+    if (fileId === activeFileId) {
+      const remainingFiles = openFiles.filter((file) => file.id !== fileId);
+      if (remainingFiles.length > 0) {
+        setActiveFileId(remainingFiles[remainingFiles.length - 1].id);
+        handleSelectFile(remainingFiles[remainingFiles.length - 1]);
+      } else {
+        setActiveFileId(null);
+      }
+    }
+  };
+
   // Update file content when editor changes
   useEffect(() => {
-    if (!editorRef.current || !selectedFile) return;
+    if (!editorRef.current || !activeFile) return;
 
     const updateContent = () => {
       const updateFileContent = (nodes: FileNode[]): FileNode[] => {
         return nodes.map((node) => {
-          if (node.id === selectedFile.id) {
+          if (node.id === activeFile.id) {
             return {
               ...node,
               content: editorRef.current?.getValue() || '',
@@ -366,7 +441,17 @@ const MonacoEditor: React.FC = () => {
         });
       };
 
+      // Update in the files tree
       setFiles(updateFileContent(files));
+
+      // Update in open files
+      setOpenFiles((prev) =>
+        prev.map((file) =>
+          file.id === activeFile.id
+            ? { ...file, content: editorRef.current?.getValue() || '' }
+            : file,
+        ),
+      );
     };
 
     const disposable = editorRef.current.onDidChangeModelContent(() => {
@@ -376,45 +461,65 @@ const MonacoEditor: React.FC = () => {
     return () => {
       disposable.dispose();
     };
-  }, [selectedFile, files]);
+  }, [activeFile, files]);
 
   return (
-    <div className="h-full flex">
-      <Resizable
-        defaultSize={{ width: 250, height: '100%' }}
-        minWidth={200}
-        maxWidth={400}
-        enable={{ right: true }}
-        className="border-r dark:border-gray-700 overflow-auto bg-gray-50 dark:bg-gray-900"
-      >
-        <FileExplorer
-          files={files}
-          onSelectFile={handleSelectFile}
-          selectedFileId={selectedFileId}
-        />
-      </Resizable>
-
-      <div className="flex-1 h-full">
-        {selectedFile ? (
-          <Editor
-            height="100%"
-            defaultLanguage="javascript"
-            defaultValue=""
-            theme={monacoTheme}
-            onMount={handleEditorDidMount}
-            options={{
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 14,
-              tabSize: 2,
-            }}
+    <div className="h-full flex flex-col">
+      <div className="h-full flex">
+        <Resizable
+          defaultSize={{ width: 250, height: '100%' }}
+          minWidth={200}
+          maxWidth={400}
+          enable={{ right: true }}
+          className="border-r dark:border-gray-700 bg-gray-50 dark:bg-gray-900"
+        >
+          <FileExplorer
+            files={files}
+            onSelectFile={handleSelectFile}
+            selectedFileId={activeFileId}
           />
-        ) : (
-          <div className="flex items-center justify-center h-full text-gray-500">
-            Select a file to edit
+        </Resizable>
+
+        <div className="flex-1 flex flex-col h-full">
+          {/* Tabs */}
+          {openFiles.length > 0 && (
+            <div className="text-sm flex border-b dark:border-gray-700 bg-gray-100 dark:bg-gray-900 overflow-x-auto">
+              {openFiles.map((file) => (
+                <EditorTab
+                  key={file.id}
+                  file={file}
+                  isActive={file.id === activeFileId}
+                  onClick={() => handleTabClick(file.id)}
+                  onClose={() => handleTabClose(file.id)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Editor */}
+          <div className="flex-1">
+            {activeFile ? (
+              <Editor
+                height="100%"
+                defaultLanguage="javascript"
+                defaultValue=""
+                theme={monacoTheme}
+                onMount={handleEditorDidMount}
+                options={{
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 14,
+                  tabSize: 2,
+                }}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                Select a file to edit
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
