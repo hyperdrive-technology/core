@@ -4,10 +4,10 @@ import {
   HeadContent,
   Outlet,
   Scripts,
-} from '@tanstack/react-router'
-import type { ReactNode } from 'react'
+} from '@tanstack/react-router';
+import { Layout } from '../components/Layout';
 
-import appCss from "@/styles/app.css?url"
+import appCss from '@/styles/app.css?url';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -20,28 +20,37 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'Inrush',
+        title: 'Inrush IDE',
       },
     ],
     links: [
       {
-        rel: "stylesheet",
+        rel: 'stylesheet',
         href: appCss,
       },
     ],
   }),
-  component: RootComponent,
-})
+  component: RootDocument,
+  errorComponent: ({ error }) => {
+    console.error('Root error:', error);
+    return (
+      <div className="p-4 bg-red-50 border border-red-200 rounded-md">
+        <h1 className="text-xl font-bold text-red-800 mb-2">
+          Something went wrong
+        </h1>
+        <p className="text-red-600">{error?.message || 'Unknown error'}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+        >
+          Reload Page
+        </button>
+      </div>
+    );
+  },
+});
 
-function RootComponent() {
-  return (
-    <RootDocument>
-      <Outlet />
-    </RootDocument>
-  )
-}
-
-function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
+function RootDocument() {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -50,9 +59,11 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
         <HeadContent />
       </head>
       <body suppressHydrationWarning>
-        {children}
+        <Layout>
+          <Outlet />
+        </Layout>
         <Scripts />
       </body>
     </html>
-  )
+  );
 }
