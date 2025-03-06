@@ -4,7 +4,7 @@ entry Program:
     (functions+=FunctionDef | functionBlocks+=FunctionBlock | programs+=ProgramDecl)*;
 
 hidden terminal WS: /\s+/;
-hidden terminal ML_COMMENT: /\/\*[\s\S]*?\*\//;
+hidden terminal ML_COMMENT: /\(\*[\s\S]*?\*\)/;
 hidden terminal SL_COMMENT: /\/\/[^\n]*/;
 
 terminal ID: /[a-zA-Z_][a-zA-Z0-9_]*/;
