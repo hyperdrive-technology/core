@@ -328,12 +328,13 @@ const MonacoEditor: React.FC = () => {
   }, [selectedFile, files]);
 
   return (
-    <div className="w-full h-[calc(100vh-64px)] flex">
+    <div className="h-full flex">
       <Resizable
         defaultSize={{ width: 250, height: '100%' }}
         minWidth={200}
         maxWidth={400}
         enable={{ right: true }}
+        className="border-r dark:border-gray-700 overflow-auto bg-gray-50 dark:bg-gray-900"
       >
         <FileExplorer
           files={files}
@@ -346,8 +347,8 @@ const MonacoEditor: React.FC = () => {
         {selectedFile ? (
           <Editor
             height="100%"
-            defaultLanguage="typescript"
-            defaultValue={selectedFile.content || ''}
+            defaultLanguage="javascript"
+            defaultValue=""
             theme="vs-dark"
             onMount={handleEditorDidMount}
             options={{
@@ -359,7 +360,7 @@ const MonacoEditor: React.FC = () => {
             }}
           />
         ) : (
-          <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800">
+          <div className="flex items-center justify-center h-full text-gray-500">
             Select a file to edit
           </div>
         )}

@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
-import { Navbar } from './navbar';
+import { AppSidebar } from './AppSidebar';
+import { SidebarProvider, SidebarTrigger } from './ui/sidebar';
 
 interface LayoutProps {
   children: ReactNode;
@@ -7,9 +8,16 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <Navbar version="0.1.0" isConnected={true} />
-      <main className="flex-1">{children}</main>
-    </div>
+    <SidebarProvider defaultOpen={true}>
+      <div className="min-h-screen bg-background flex flex-1">
+        <AppSidebar />
+        <div className="flex-1 flex flex-col">
+          <main className="flex-1 p-4">
+            <SidebarTrigger className="lg:hidden mb-4" />
+            {children}
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
   );
 }

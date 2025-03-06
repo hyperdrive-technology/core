@@ -5,7 +5,6 @@ import {
   Outlet,
   Scripts,
 } from '@tanstack/react-router';
-import { Layout } from '../components/Layout';
 
 import appCss from '@/styles/app.css?url';
 
@@ -59,9 +58,7 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body suppressHydrationWarning>
-        <Layout>
-          <Outlet />
-        </Layout>
+        <Outlet />
         <Scripts />
       </body>
     </html>

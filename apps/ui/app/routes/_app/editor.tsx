@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
-import MonacoEditor from '../components/MonacoEditor';
+import MonacoEditor from '../../components/MonacoEditor';
 
-export const Route = createFileRoute('/editor')({
+export const Route = createFileRoute('/_app/editor')({
   component: EditorPage,
   errorComponent: ({ error }) => {
     console.error('Editor route error:', error);
@@ -22,8 +22,7 @@ export const Route = createFileRoute('/editor')({
 
 function EditorPage() {
   return (
-    <div className="h-[calc(100vh-64px)]">
-      <h1 className="text-2xl font-bold mb-4 px-4">Code Editor</h1>
+    <div className="h-full flex flex-col">
       <MonacoEditor />
     </div>
   );
