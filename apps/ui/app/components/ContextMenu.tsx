@@ -72,14 +72,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     }
   };
 
-  const handleOpenChange = (open: boolean) => {
-    console.log('ContextMenu open state changed:', open);
-    setIsOpen(open);
-    if (!open) {
-      onClose();
-    }
-  };
-
   // Create a custom context menu that appears at the mouse position
   return (
     <>

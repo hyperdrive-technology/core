@@ -6,9 +6,12 @@
       "grammar": "app/server/iec61131/iec-61131.langium",
       "fileExtensions": [".st"],
       "textMate": {
-        "out": "syntaxes/iec61131.tmLanguage.json"
+        "out": "app/server/iec61131/generated/iec61131.tmLanguage.json"
+      },
+      "monarch": {
+        "out": "app/server/iec61131/generated/monarch-syntax.ts"
       }
     }
   ],
-  "out": "src/generated"
+  "out": "app/server/iec61131/generated"
 }

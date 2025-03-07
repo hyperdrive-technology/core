@@ -1,61 +1,11 @@
 import * as monaco from 'monaco-editor';
 import { editor, languages } from 'monaco-editor';
-import { IEC61131LanguageMetaData } from '../../../src/generated/module';
-
-// Define a type for the monarch tokens
-interface MonarchDefinition {
-  defaultToken: string;
-  tokenPostfix?: string;
-  ignoreCase?: boolean;
-  keywords?: string[];
-  tokenizer: Record<string, any[]>;
-  [key: string]: any;
-}
-
-// Try to import the Langium-generated monarch syntax if available
-let monarchTokens: MonarchDefinition;
-try {
-  // This path should match the output path defined in package.json for the monaco monarch syntax
-  monarchTokens = require('./monarch-syntax.js').default;
-} catch (e) {
-  console.warn(
-    'Langium-generated monarch syntax not found. Run "pnpm run langium:generate" to generate it.',
-  );
-  // Fallback to a simple syntax highlighting if the file isn't generated yet
-  monarchTokens = {
-    defaultToken: '',
-    tokenPostfix: '.st',
-    ignoreCase: true,
-    keywords: ['IF', 'THEN', 'ELSE', 'END_IF', 'PROGRAM', 'END_PROGRAM'],
-    tokenizer: {
-      root: [
-        [
-          /[a-zA-Z_][\w$]*/,
-          {
-            cases: {
-              '@keywords': 'keyword',
-              '@default': 'identifier',
-            },
-          },
-        ],
-        [/\/\/.*$/, 'comment'],
-        [/\(\*/, 'comment', '@comment'],
-        [/[;,.]/, 'delimiter'],
-      ],
-      comment: [
-        [/[^\(*]+/, 'comment'],
-        [/\*\)/, 'comment', '@pop'],
-        [/\(\*/, 'comment', '@push'],
-        [/./, 'comment'],
-      ],
-    },
-  };
-}
+import monarchSyntax from './custom-monarch-syntax';
+import { IEC61131LanguageMetaData } from './generated/module';
 
 // Constants
 const LANGUAGE_ID = IEC61131LanguageMetaData.languageId;
-const WORKER_PATH = new URL('../../workers/langium-worker.js', import.meta.url)
-  .href;
+const WORKER_PATH = new URL('./langium-worker.ts', import.meta.url);
 
 /**
  * Set up the Langium web worker for Monaco Editor
@@ -70,7 +20,7 @@ export function setupLangiumMonaco(
     aliases: ['IEC 61131-3', 'ST', 'Structured Text'],
   });
 
-  // Set up the language configuration for better editing experience
+  // Set up language configuration (comments, brackets, etc.)
   monaco.languages.setLanguageConfiguration(LANGUAGE_ID, {
     comments: {
       lineComment: '//',
@@ -80,6 +30,16 @@ export function setupLangiumMonaco(
       ['{', '}'],
       ['[', ']'],
       ['(', ')'],
+      ['BEGIN', 'END'],
+      ['IF', 'END_IF'],
+      ['CASE', 'END_CASE'],
+      ['FOR', 'END_FOR'],
+      ['WHILE', 'END_WHILE'],
+      ['REPEAT', 'UNTIL'],
+      ['PROGRAM', 'END_PROGRAM'],
+      ['FUNCTION', 'END_FUNCTION'],
+      ['FUNCTION_BLOCK', 'END_FUNCTION_BLOCK'],
+      ['VAR', 'END_VAR'],
     ],
     autoClosingPairs: [
       { open: '{', close: '}' },
@@ -87,6 +47,7 @@ export function setupLangiumMonaco(
       { open: '(', close: ')' },
       { open: '"', close: '"' },
       { open: "'", close: "'" },
+      { open: '(*', close: '*)' },
     ],
     surroundingPairs: [
       { open: '{', close: '}' },
@@ -95,12 +56,6 @@ export function setupLangiumMonaco(
       { open: '"', close: '"' },
       { open: "'", close: "'" },
     ],
-    indentationRules: {
-      increaseIndentPattern:
-        /^\s*(IF|THEN|ELSE|ELSIF|CASE|FOR|WHILE|REPEAT|DO|FUNCTION|FUNCTION_BLOCK|PROGRAM|VAR|VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|VAR_TEMP|VAR_EXTERNAL|TYPE|STRUCT)\b/i,
-      decreaseIndentPattern:
-        /^\s*(END_IF|END_CASE|END_FOR|END_WHILE|END_REPEAT|END_FUNCTION|END_FUNCTION_BLOCK|END_PROGRAM|END_VAR|END_TYPE|END_STRUCT)\b/i,
-    },
     folding: {
       markers: {
         start: new RegExp(
@@ -115,8 +70,69 @@ export function setupLangiumMonaco(
     },
   });
 
-  // Set up syntax highlighting using the Langium-generated monarch tokens
-  monaco.languages.setMonarchTokensProvider(LANGUAGE_ID, monarchTokens);
+  // Set up syntax highlighting using the imported custom monarch tokens
+  console.log('Using custom monarch syntax:', monarchSyntax);
+  monaco.languages.setMonarchTokensProvider(LANGUAGE_ID, monarchSyntax);
+
+  // Set up token styling
+  monaco.editor.defineTheme('iec61131-theme', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      // Keywords and sections
+      { token: 'keyword', foreground: '0000FF', fontStyle: 'bold' },
+      { token: 'section.keyword', foreground: '800080', fontStyle: 'bold' }, // Purple for section headers
+
+      // Types
+      { token: 'type', foreground: '008000' },
+
+      // Operators
+      { token: 'operator.word', foreground: 'D2691E', fontStyle: 'bold' }, // Special styling for word operators like AND, OR
+      { token: 'operator', foreground: 'D2691E' },
+      { token: 'operator.assignment', foreground: 'D2691E', fontStyle: 'bold' }, // Make assignments stand out
+
+      // Constants
+      { token: 'constant', foreground: '0000FF', fontStyle: 'italic' },
+
+      // Numbers
+      { token: 'number', foreground: '098658' },
+      { token: 'number.float', foreground: '098658' },
+      { token: 'number.hex', foreground: '3030DD' },
+      { token: 'number.binary', foreground: '3030DD' },
+      { token: 'number.octal', foreground: '3030DD' },
+      { token: 'number.time', foreground: '3030DD', fontStyle: 'italic' },
+      { token: 'number.date', foreground: '3030DD', fontStyle: 'italic' },
+
+      // Strings
+      { token: 'string', foreground: 'A31515' },
+
+      // Comments
+      { token: 'comment', foreground: '008000', fontStyle: 'italic' },
+
+      // Functions and variables
+      { token: 'function', foreground: 'B00020' }, // Function declarations
+      { token: 'variable.function', foreground: 'B00020' }, // Function calls from variables
+      { token: 'variable.declaration', foreground: '0000A0' }, // Variable declarations
+      { token: 'parameter.name', foreground: '8A2BE2' }, // Parameter names
+      { token: 'predefined', foreground: '0070C1' }, // Built-in functions
+      { token: 'variable.name', foreground: '000000' }, // Regular variables
+
+      // Brackets and delimiters
+      { token: '@brackets', foreground: '000000' },
+      { token: 'delimiter', foreground: '000000' },
+    ],
+    colors: {
+      'editor.foreground': '#000000',
+      'editor.background': '#FFFFFF',
+      'editor.selectionBackground': '#ADD6FF',
+      'editor.lineHighlightBackground': '#F0F0F0',
+      'editorCursor.foreground': '#000000',
+      'editorWhitespace.foreground': '#BFBFBF',
+    },
+  });
+
+  // Apply the theme
+  monaco.editor.setTheme('iec61131-theme');
 
   // Set up language worker for validation
   setupLanguageWorker();
@@ -129,10 +145,10 @@ export function setupLangiumMonaco(
  * Set up the language worker for validation
  */
 function setupLanguageWorker(): void {
-  console.log('Setting up Langium worker at', WORKER_PATH);
+  console.log('Setting up Langium worker at', WORKER_PATH.toString());
 
-  // Register a simple message handler for the worker
-  const worker = new Worker(WORKER_PATH);
+  // Create the worker with the type: 'module' option
+  const worker = new Worker(WORKER_PATH, { type: 'module' });
 
   // Set up listener for diagnostic messages from the worker
   worker.onmessage = (e: MessageEvent) => {

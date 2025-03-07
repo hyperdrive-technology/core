@@ -1,3 +1,5 @@
+/// <reference lib="webworker" />
+
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import {
   BrowserMessageReader,

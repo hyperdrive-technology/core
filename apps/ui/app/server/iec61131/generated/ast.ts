@@ -11,78 +11,87 @@ export const IEC61131Terminals = {
     WS: /\s+/,
     ML_COMMENT: /\(\*[\s\S]*?\*\)/,
     SL_COMMENT: /\/\/[^\n]*/,
+    FUNCTION_BLOCK: /FUNCTION_BLOCK/,
+    END_FUNCTION_BLOCK: /END_FUNCTION_BLOCK/,
+    VAR_INPUT: /VAR_INPUT/,
+    VAR_OUTPUT: /VAR_OUTPUT/,
+    VAR_IN_OUT: /VAR_IN_OUT/,
+    END_PROGRAM: /END_PROGRAM/,
+    END_FUNCTION: /END_FUNCTION/,
+    END_WHILE: /END_WHILE/,
+    END_REPEAT: /END_REPEAT/,
+    END_STRUCT: /END_STRUCT/,
+    END_IF: /END_IF/,
+    END_FOR: /END_FOR/,
+    END_VAR: /END_VAR/,
+    END_CASE: /END_CASE/,
+    FUNCTION: /FUNCTION/,
+    PROGRAM: /PROGRAM/,
+    REPEAT: /REPEAT/,
+    STRUCT: /STRUCT/,
+    WHILE: /WHILE/,
+    ARRAY: /ARRAY/,
+    BEGIN: /BEGIN/,
+    ELSIF: /ELSIF/,
+    UNTIL: /UNTIL/,
+    ELSE: /ELSE/,
+    THEN: /THEN/,
+    VAR: /VAR/,
+    FOR: /FOR/,
+    END: /END/,
+    IF: /IF/,
+    OF: /OF/,
+    TO: /TO/,
+    BY: /BY/,
+    DO: /DO/,
+    CASE: /CASE/,
+    RETURN: /RETURN/,
+    TRUE: /TRUE/,
+    FALSE: /FALSE/,
+    AND: /AND/,
+    OR: /OR/,
+    XOR: /XOR/,
+    MOD: /MOD/,
+    HEX_NUMBER: /16#[0-9A-Fa-f]+/,
+    BIN_NUMBER: /2#[01]+/,
+    OCT_NUMBER: /8#[0-7]+/,
+    TIME_LITERAL: /T#[0-9smhd_]+/,
+    DATE_LITERAL: /D#\d{4}-\d{1,2}-\d{1,2}/,
     ID: /[a-zA-Z_][a-zA-Z0-9_]*/,
     NUMBER: /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/,
     STRING: /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/,
+    LESS_EQUAL: /<=/,
+    GREATER_EQUAL: />=/,
+    NOT_EQUAL: /<>/,
+    ASSIGN: /:=/,
+    INIT: /=>/,
+    RANGE: /\.\./,
+    EQUAL: /=/,
+    LESS: /</,
+    GREATER: />/,
+    PLUS: /\+/,
+    MINUS: /-/,
+    MULTIPLY: /\*/,
+    DIVIDE: /\//,
+    DOT: /\./,
+    COMMA: /,/,
+    SEMICOLON: /;/,
+    COLON: /:/,
+    LPAREN: /\(/,
+    RPAREN: /\)/,
+    LBRACKET: /\[/,
+    RBRACKET: /\]/,
 };
 
 export type IEC61131TerminalNames = keyof typeof IEC61131Terminals;
 
-export type IEC61131KeywordNames = 
-    | "("
-    | ")"
-    | "*"
-    | "+"
-    | ","
-    | "-"
-    | "."
-    | ".."
-    | "/"
-    | ":"
-    | ":="
-    | ";"
-    | "<"
-    | "<="
-    | "<>"
-    | "="
-    | "=>"
-    | ">"
-    | ">="
-    | "AND"
-    | "ARRAY"
-    | "BEGIN"
-    | "BY"
-    | "DO"
-    | "ELSE"
-    | "ELSIF"
-    | "END"
-    | "END_FOR"
-    | "END_FUNCTION"
-    | "END_FUNCTION_BLOCK"
-    | "END_IF"
-    | "END_PROGRAM"
-    | "END_REPEAT"
-    | "END_STRUCT"
-    | "END_VAR"
-    | "END_WHILE"
-    | "FALSE"
-    | "FOR"
-    | "FUNCTION"
-    | "FUNCTION_BLOCK"
-    | "IF"
-    | "MOD"
-    | "OF"
-    | "OR"
-    | "PROGRAM"
-    | "REPEAT"
-    | "STRUCT"
-    | "THEN"
-    | "TO"
-    | "TRUE"
-    | "UNTIL"
-    | "VAR"
-    | "VAR_INPUT"
-    | "VAR_OUTPUT"
-    | "WHILE"
-    | "XOR"
-    | "["
-    | "]";
+export type IEC61131KeywordNames = never;
 
 export type IEC61131TokenNames = IEC61131TerminalNames | IEC61131KeywordNames;
 
-export type BOOL = boolean;
+export type BoolLiteral = boolean;
 
-export function isBOOL(item: unknown): item is BOOL {
+export function isBoolLiteral(item: unknown): item is BoolLiteral {
     return typeof item === 'boolean';
 }
 
@@ -102,7 +111,7 @@ export function isPrimaryExpression(item: unknown): item is PrimaryExpression {
     return reflection.isInstance(item, PrimaryExpression);
 }
 
-export type Statement = Assignment | ForStatement | FunctionCall | IfStatement | RepeatStatement | WhileStatement;
+export type Statement = Assignment | CaseStatement | ForStatement | FunctionCall | IfStatement | RepeatStatement | ReturnStatement | WhileStatement;
 
 export const Statement = 'Statement';
 
@@ -122,7 +131,7 @@ export interface AdditiveExpression extends AstNode {
     readonly $container: RelationalExpression;
     readonly $type: 'AdditiveExpression';
     left: MultiplicativeExpression;
-    operators: Array<'+' | '-'>;
+    operators: Array<string>;
     right: Array<MultiplicativeExpression>;
 }
 
@@ -136,7 +145,7 @@ export interface AndExpression extends AstNode {
     readonly $container: OrExpression;
     readonly $type: 'AndExpression';
     left: EqualityExpression;
-    operators: Array<'AND'>;
+    operators: Array<string>;
     right: Array<EqualityExpression>;
 }
 
@@ -162,8 +171,8 @@ export function isArgument(item: unknown): item is Argument {
 export interface ArrayType extends AstNode {
     readonly $container: ArrayType | FunctionDef | VariableDecl;
     readonly $type: 'ArrayType';
-    end: number;
-    start: number;
+    end: number | string;
+    start: number | string;
     type: TypeDecl;
 }
 
@@ -174,7 +183,7 @@ export function isArrayType(item: unknown): item is ArrayType {
 }
 
 export interface Assignment extends AstNode {
-    readonly $container: ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
+    readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
     readonly $type: 'Assignment';
     target: LeftExpression;
     value: Expression;
@@ -184,6 +193,21 @@ export const Assignment = 'Assignment';
 
 export function isAssignment(item: unknown): item is Assignment {
     return reflection.isInstance(item, Assignment);
+}
+
+export interface CaseStatement extends AstNode {
+    readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
+    readonly $type: 'CaseStatement';
+    caseLabels: Array<Expression>;
+    caseStatements: Array<Statement>;
+    defaultStatements: Array<Statement>;
+    expression: Expression;
+}
+
+export const CaseStatement = 'CaseStatement';
+
+export function isCaseStatement(item: unknown): item is CaseStatement {
+    return reflection.isInstance(item, CaseStatement);
 }
 
 export interface ElementAccess extends AstNode {
@@ -203,7 +227,7 @@ export interface EqualityExpression extends AstNode {
     readonly $container: AndExpression;
     readonly $type: 'EqualityExpression';
     left: RelationalExpression;
-    operators: Array<'<>' | '='>;
+    operators: Array<string>;
     right: Array<RelationalExpression>;
 }
 
@@ -214,7 +238,7 @@ export function isEqualityExpression(item: unknown): item is EqualityExpression 
 }
 
 export interface ForStatement extends AstNode {
-    readonly $container: ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
+    readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
     readonly $type: 'ForStatement';
     end: Expression;
     start: Expression;
@@ -244,10 +268,11 @@ export function isFunctionBlock(item: unknown): item is FunctionBlock {
 }
 
 export interface FunctionCall extends AstNode {
-    readonly $container: ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
+    readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
     readonly $type: 'FunctionCall';
     args: Array<Argument>;
-    func: Reference<FunctionDef>;
+    func?: Reference<FunctionDef>;
+    variable?: Reference<VariableDecl>;
 }
 
 export const FunctionCall = 'FunctionCall';
@@ -260,7 +285,8 @@ export interface FunctionCallExpression extends AstNode {
     readonly $container: MultiplicativeExpression;
     readonly $type: 'FunctionCallExpression';
     args: Array<Argument>;
-    func: Reference<FunctionDef>;
+    func?: Reference<FunctionDef>;
+    variable?: Reference<VariableDecl>;
 }
 
 export const FunctionCallExpression = 'FunctionCallExpression';
@@ -285,7 +311,7 @@ export function isFunctionDef(item: unknown): item is FunctionDef {
 }
 
 export interface IfStatement extends AstNode {
-    readonly $container: ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
+    readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
     readonly $type: 'IfStatement';
     condition: Expression;
     elseIfConditions: Array<Expression>;
@@ -315,7 +341,7 @@ export function isLeftExpression(item: unknown): item is LeftExpression {
 export interface Literal extends AstNode {
     readonly $container: MultiplicativeExpression;
     readonly $type: 'Literal';
-    value?: BOOL | number | string;
+    value?: BoolLiteral | number | string;
 }
 
 export const Literal = 'Literal';
@@ -328,7 +354,7 @@ export interface MultiplicativeExpression extends AstNode {
     readonly $container: AdditiveExpression;
     readonly $type: 'MultiplicativeExpression';
     left: PrimaryExpression;
-    operators: Array<'*' | '/' | 'MOD'>;
+    operators: Array<string>;
     right: Array<PrimaryExpression>;
 }
 
@@ -339,10 +365,10 @@ export function isMultiplicativeExpression(item: unknown): item is Multiplicativ
 }
 
 export interface OrExpression extends AstNode {
-    readonly $container: Argument | Assignment | ElementAccess | ForStatement | IfStatement | MultiplicativeExpression | RepeatStatement | VariableDecl | WhileStatement;
+    readonly $container: Argument | Assignment | CaseStatement | ElementAccess | ForStatement | IfStatement | MultiplicativeExpression | RepeatStatement | ReturnStatement | VariableDecl | WhileStatement;
     readonly $type: 'OrExpression';
     left: AndExpression;
-    operators: Array<'OR' | 'XOR'>;
+    operators: Array<string>;
     right: Array<AndExpression>;
 }
 
@@ -395,7 +421,7 @@ export interface RelationalExpression extends AstNode {
     readonly $container: EqualityExpression;
     readonly $type: 'RelationalExpression';
     left: AdditiveExpression;
-    operators: Array<'<' | '<=' | '>' | '>='>;
+    operators: Array<string>;
     right: Array<AdditiveExpression>;
 }
 
@@ -406,7 +432,7 @@ export function isRelationalExpression(item: unknown): item is RelationalExpress
 }
 
 export interface RepeatStatement extends AstNode {
-    readonly $container: ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
+    readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
     readonly $type: 'RepeatStatement';
     condition: Expression;
     statements: Array<Statement>;
@@ -416,6 +442,18 @@ export const RepeatStatement = 'RepeatStatement';
 
 export function isRepeatStatement(item: unknown): item is RepeatStatement {
     return reflection.isInstance(item, RepeatStatement);
+}
+
+export interface ReturnStatement extends AstNode {
+    readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
+    readonly $type: 'ReturnStatement';
+    value?: Expression;
+}
+
+export const ReturnStatement = 'ReturnStatement';
+
+export function isReturnStatement(item: unknown): item is ReturnStatement {
+    return reflection.isInstance(item, ReturnStatement);
 }
 
 export interface SimpleType extends AstNode {
@@ -481,7 +519,7 @@ export function isVariableReference(item: unknown): item is VariableReference {
 }
 
 export interface WhileStatement extends AstNode {
-    readonly $container: ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
+    readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
     readonly $type: 'WhileStatement';
     condition: Expression;
     statements: Array<Statement>;
@@ -499,6 +537,7 @@ export type IEC61131AstType = {
     Argument: Argument
     ArrayType: ArrayType
     Assignment: Assignment
+    CaseStatement: CaseStatement
     ElementAccess: ElementAccess
     EqualityExpression: EqualityExpression
     Expression: Expression
@@ -518,6 +557,7 @@ export type IEC61131AstType = {
     ProgramDecl: ProgramDecl
     RelationalExpression: RelationalExpression
     RepeatStatement: RepeatStatement
+    ReturnStatement: ReturnStatement
     SimpleType: SimpleType
     Statement: Statement
     StructType: StructType
@@ -531,7 +571,7 @@ export type IEC61131AstType = {
 export class IEC61131AstReflection extends AbstractAstReflection {
 
     getAllTypes(): string[] {
-        return [AdditiveExpression, AndExpression, Argument, ArrayType, Assignment, ElementAccess, EqualityExpression, Expression, ForStatement, FunctionBlock, FunctionCall, FunctionCallExpression, FunctionDef, IfStatement, LeftExpression, Literal, MultiplicativeExpression, OrExpression, PrimaryExpression, Program, ProgramBody, ProgramDecl, RelationalExpression, RepeatStatement, SimpleType, Statement, StructType, TypeDecl, VarDeclaration, VariableDecl, VariableReference, WhileStatement];
+        return [AdditiveExpression, AndExpression, Argument, ArrayType, Assignment, CaseStatement, ElementAccess, EqualityExpression, Expression, ForStatement, FunctionBlock, FunctionCall, FunctionCallExpression, FunctionDef, IfStatement, LeftExpression, Literal, MultiplicativeExpression, OrExpression, PrimaryExpression, Program, ProgramBody, ProgramDecl, RelationalExpression, RepeatStatement, ReturnStatement, SimpleType, Statement, StructType, TypeDecl, VarDeclaration, VariableDecl, VariableReference, WhileStatement];
     }
 
     protected override computeIsSubtype(subtype: string, supertype: string): boolean {
@@ -542,10 +582,12 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                 return this.isSubtype(TypeDecl, supertype);
             }
             case Assignment:
+            case CaseStatement:
             case ForStatement:
             case FunctionCall:
             case IfStatement:
             case RepeatStatement:
+            case ReturnStatement:
             case WhileStatement: {
                 return this.isSubtype(Statement, supertype);
             }
@@ -570,6 +612,10 @@ export class IEC61131AstReflection extends AbstractAstReflection {
             case 'FunctionCall:func':
             case 'FunctionCallExpression:func': {
                 return FunctionDef;
+            }
+            case 'FunctionCall:variable':
+            case 'FunctionCallExpression:variable': {
+                return VariableDecl;
             }
             default: {
                 throw new Error(`${referenceId} is not a valid reference id.`);
@@ -627,6 +673,17 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     ]
                 };
             }
+            case CaseStatement: {
+                return {
+                    name: CaseStatement,
+                    properties: [
+                        { name: 'caseLabels', defaultValue: [] },
+                        { name: 'caseStatements', defaultValue: [] },
+                        { name: 'defaultStatements', defaultValue: [] },
+                        { name: 'expression' }
+                    ]
+                };
+            }
             case ElementAccess: {
                 return {
                     name: ElementAccess,
@@ -673,7 +730,8 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     name: FunctionCall,
                     properties: [
                         { name: 'args', defaultValue: [] },
-                        { name: 'func' }
+                        { name: 'func' },
+                        { name: 'variable' }
                     ]
                 };
             }
@@ -682,7 +740,8 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     name: FunctionCallExpression,
                     properties: [
                         { name: 'args', defaultValue: [] },
-                        { name: 'func' }
+                        { name: 'func' },
+                        { name: 'variable' }
                     ]
                 };
             }
@@ -789,6 +848,14 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     properties: [
                         { name: 'condition' },
                         { name: 'statements', defaultValue: [] }
+                    ]
+                };
+            }
+            case ReturnStatement: {
+                return {
+                    name: ReturnStatement,
+                    properties: [
+                        { name: 'value' }
                     ]
                 };
             }

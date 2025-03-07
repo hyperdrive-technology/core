@@ -515,7 +515,11 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
     monaco.editor.setTheme(monacoTheme);
 
     // Register the IEC61131 language (Structured Text)
-    registerIEC61131Language(monaco);
+    try {
+      registerIEC61131Language(monaco);
+    } catch (error) {
+      console.error('Failed to register IEC61131 language:', error);
+    }
 
     // Configure Monaco if needed
     monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({

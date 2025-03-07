@@ -24,16 +24,14 @@
           ".st"
         ],
         "textMate": {
-          "out": "syntaxes/iec61131.tmLanguage.json"
+          "out": "app/server/iec61131/iec61131.tmLanguage.json"
         },
-        "monaco": {
-          "monarch": {
-            "out": "app/server/iec61131/monarch-syntax.js"
-          }
+        "monarch": {
+          "out": "app/server/iec61131/monarch-syntax.js"
         }
       }
     ],
-    "out": "src/generated"
+    "out": "app/server/iec61131/generated"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
