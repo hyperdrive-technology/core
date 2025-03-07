@@ -1,0 +1,14 @@
+{
+  "projectName": "IEC61131",
+  "languages": [
+    {
+      "id": "iec-61131",
+      "grammar": "app/server/iec61131/iec-61131.langium",
+      "fileExtensions": [".st"],
+      "textMate": {
+        "out": "syntaxes/iec61131.tmLanguage.json"
+      }
+    }
+  ],
+  "out": "src/generated"
+}

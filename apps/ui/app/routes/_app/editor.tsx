@@ -30,7 +30,6 @@ function EditorPage() {
   const location = window.location;
   const searchParams = new URLSearchParams(location.search);
   const projectId = searchParams.get('projectId');
-  const projectName = searchParams.get('projectName');
   const [projectFiles, setProjectFiles] = useState<FileNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
