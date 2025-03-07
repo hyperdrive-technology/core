@@ -18,12 +18,14 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import {
   ArrowUpDown,
   Code,
+  FolderIcon,
   LayoutDashboard,
   MoreHorizontal,
   Plus,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createProject } from '../server/create-project.server';
+import { FileNode, loadExampleProjects } from '../server/load-examples.server';
 
 interface Project {
   id: string;
@@ -59,6 +61,25 @@ function HomePage() {
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
   const [error, setError] = useState('');
+  const [exampleProjects, setExampleProjects] = useState<FileNode[]>([]);
+  const [loadingExamples, setLoadingExamples] = useState(true);
+
+  // Load example projects on component mount
+  useEffect(() => {
+    const fetchExampleProjects = async () => {
+      try {
+        setLoadingExamples(true);
+        const projects = await loadExampleProjects();
+        setExampleProjects(projects);
+      } catch (error) {
+        console.error('Failed to load example projects:', error);
+      } finally {
+        setLoadingExamples(false);
+      }
+    };
+
+    fetchExampleProjects();
+  }, []);
 
   const handleCreateProject = async () => {
     if (!projectName.trim()) {
@@ -98,6 +119,52 @@ function HomePage() {
     setProjectDescription('');
     setError('');
     setIsCreating(false);
+  };
+
+  // Navigate to editor with the selected example project
+  const handleOpenExampleProject = (project: FileNode) => {
+    navigate({
+      to: '/editor',
+      search: {
+        projectId: project.id,
+        projectName: project.name,
+      },
+    });
+  };
+
+  // Example Projects Section
+  const renderExampleProjects = () => {
+    if (loadingExamples) {
+      return (
+        <div className="col-span-full flex flex-col items-center justify-center py-8 border rounded-lg">
+          <p className="text-muted-foreground">Loading example projects...</p>
+        </div>
+      );
+    }
+
+    if (exampleProjects.length === 0) {
+      return (
+        <div className="col-span-full flex flex-col items-center justify-center py-8 border rounded-lg">
+          <p className="text-muted-foreground">No example projects found</p>
+        </div>
+      );
+    }
+
+    return exampleProjects.map((project) => (
+      <div
+        key={project.id}
+        className="border rounded-lg p-4 hover:border-primary cursor-pointer transition-colors"
+        onClick={() => handleOpenExampleProject(project)}
+      >
+        <div className="flex items-center mb-2">
+          <FolderIcon className="h-5 w-5 mr-2 text-primary" />
+          <h3 className="font-medium">{project.name}</h3>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {project.isFolder ? 'Example project folder' : 'Example file'}
+        </p>
+      </div>
+    ));
   };
 
   return (
@@ -249,62 +316,53 @@ function HomePage() {
             </div>
           )}
 
-          {/* New Project Dialog */}
-          <Dialog
-            open={isCreating}
-            onOpenChange={(open: boolean) => {
-              if (!open) resetForm();
-              setIsCreating(open);
-            }}
-          >
-            <DialogContent className="sm:max-w-[425px]">
+          {/* Example Projects Section */}
+          <div className="mt-12">
+            <h2 className="text-2xl font-bold mb-6">Example Projects</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {renderExampleProjects()}
+            </div>
+          </div>
+
+          {/* Create Project Dialog */}
+          <Dialog open={isCreating} onOpenChange={setIsCreating}>
+            <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create New Project</DialogTitle>
                 <DialogDescription>
                   Enter the details for your new project.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="name" className="text-right">
-                    Name
-                  </Label>
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Project Name</Label>
                   <Input
                     id="name"
+                    placeholder="Enter project name"
                     value={projectName}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setProjectName(e.target.value)
-                    }
-                    className="col-span-3"
-                    placeholder="My Project"
+                    onChange={(e) => setProjectName(e.target.value)}
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="description" className="text-right">
-                    Description
-                  </Label>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description (Optional)</Label>
                   <Textarea
                     id="description"
+                    placeholder="Enter project description"
                     value={projectDescription}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                      setProjectDescription(e.target.value)
-                    }
-                    className="col-span-3"
-                    placeholder="Project description"
+                    onChange={(e) => setProjectDescription(e.target.value)}
                   />
                 </div>
                 {error && (
-                  <div className="text-sm text-red-500 mt-2 text-center">
+                  <p className="text-sm font-medium text-destructive">
                     {error}
-                  </div>
+                  </p>
                 )}
               </div>
               <DialogFooter>
-                <Button
-                  type="submit"
-                  onClick={handleCreateProject}
-                  disabled={isLoading}
-                >
+                <Button variant="outline" onClick={resetForm}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateProject} disabled={isLoading}>
                   {isLoading ? 'Creating...' : 'Create Project'}
                 </Button>
               </DialogFooter>

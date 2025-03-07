@@ -6,6 +6,10 @@ alwaysApply: false
 
 # React Component Guidelines
 
+## Framework
+
+- Use Tanstack start and Tanstack router for react component and server function organisation
+
 ## Functional Components
 
 - Always use functional components instead of class components

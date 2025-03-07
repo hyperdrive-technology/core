@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { Resizable } from 're-resizable';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   IEC61131_LANGUAGE_ID,
   registerIEC61131Language,
@@ -25,7 +25,7 @@ interface FileNode {
 }
 
 // Sample file structure - replace with your actual data
-const initialFiles: FileNode[] = [
+const defaultFiles: FileNode[] = [
   {
     id: '1',
     name: 'src',
@@ -302,9 +302,18 @@ const TreeNode: React.FC<{
     }
   };
 
-  const handleSelect = () => {
+  const handleSelect = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (!node.isFolder) {
-      onSelectFile(node);
+      // Create a fresh copy of the node to ensure it's not stale
+      const freshNode: FileNode = {
+        ...node,
+        content: node.content,
+      };
+
+      onSelectFile(freshNode);
+    } else {
+      setIsExpanded(!isExpanded);
     }
   };
 
@@ -321,11 +330,11 @@ const TreeNode: React.FC<{
         onClick={handleSelect}
       >
         {node.isFolder ? (
-          <span onClick={handleToggle} className="flex items-center">
+          <span className="flex items-center">
             {isExpanded ? (
-              <ChevronDown size={16} />
+              <ChevronDown size={16} onClick={handleToggle} />
             ) : (
-              <ChevronRight size={16} />
+              <ChevronRight size={16} onClick={handleToggle} />
             )}
             <FolderIcon size={16} className="mr-1 text-yellow-500" />
           </span>
@@ -494,28 +503,99 @@ function useLanguageClient(
   }, [monaco, editor]);
 }
 
-// Main Monaco Editor Component
-const MonacoEditor: React.FC = () => {
+// Update the component to accept initialFiles prop
+interface MonacoEditorProps {
+  initialFiles?: FileNode[];
+}
+
+const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
-  const [files, setFiles] = useState<FileNode[]>(initialFiles);
+  const [files, setFiles] = useState<FileNode[]>(initialFiles ?? defaultFiles);
   const [openFiles, setOpenFiles] = useState<FileNode[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
+  const [loadingExamples, setLoadingExamples] = useState(false);
 
-  // Find our IEC61131 example file node for auto-opening
-  const iec61131ExampleFile = useMemo(() => {
-    const examplesFolder = initialFiles.find(
-      (f) => f.name === 'examples' && f.isFolder,
-    );
-    return examplesFolder?.children?.find((f) => f.name === 'test.st');
+  // Auto-open the first file from initialFiles if provided
+  useEffect(() => {
+    if (
+      initialFiles &&
+      initialFiles.length > 0 &&
+      editorReady &&
+      !activeFileId
+    ) {
+      // Find the first non-folder file to open
+      const findFirstFile = (nodes: FileNode[]): FileNode | null => {
+        for (const node of nodes) {
+          // Prefer .st files first (IEC61131 files)
+          if (!node.isFolder && node.name.endsWith('.st')) {
+            return node;
+          }
+        }
+
+        // If no .st file found, look for any file
+        for (const node of nodes) {
+          if (!node.isFolder) {
+            return node;
+          }
+          if (node.children && node.children.length > 0) {
+            const file = findFirstFile(node.children);
+            if (file) return file;
+          }
+        }
+        return null;
+      };
+
+      const fileToOpen = findFirstFile(initialFiles);
+      if (fileToOpen) {
+        console.log('Auto-opening file:', fileToOpen.name);
+
+        // Add to open files
+        setOpenFiles((prev) => [...prev, fileToOpen]);
+
+        // Set as active file
+        setActiveFileId(fileToOpen.id);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFiles, editorReady]);
+
+  // Function to load examples from the file system
+  const loadExampleProjects = useCallback(async () => {
+    try {
+      setLoadingExamples(true);
+      const response = await fetch('/api/examples');
+
+      if (!response.ok) {
+        throw new Error(`Error fetching examples: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.examples && Array.isArray(data.examples)) {
+        // Create IEC61131 projects node
+        const projectsNode: FileNode = {
+          id: 'filesystem-examples',
+          name: 'IEC61131 Projects',
+          isFolder: true,
+          children: data.examples,
+        };
+
+        // Add to files
+        setFiles((prevFiles) => [...prevFiles, projectsNode]);
+      }
+    } catch (error) {
+      console.error('Failed to load example projects:', error);
+    } finally {
+      setLoadingExamples(false);
+    }
   }, []);
 
-  // Auto-open the ST file on initial load
+  // Load examples on component mount
   useEffect(() => {
-    if (iec61131ExampleFile && !activeFileId) {
-      handleSelectFile(iec61131ExampleFile);
-    }
-  }, [iec61131ExampleFile, activeFileId]);
+    loadExampleProjects();
+  }, [loadExampleProjects]);
 
   // Get the current theme from the DOM to avoid SSR issues
   const getCurrentTheme = () => {
@@ -590,6 +670,20 @@ const MonacoEditor: React.FC = () => {
       noEmit: true,
       typeRoots: ['node_modules/@types'],
     });
+
+    // Mark editor as ready
+    setEditorReady(true);
+
+    // Check if we have an active file that needs to be displayed
+    if (activeFileId) {
+      const fileToDisplay = openFiles.find((file) => file.id === activeFileId);
+      if (fileToDisplay) {
+        // Use setTimeout to ensure the editor is fully initialized
+        setTimeout(() => {
+          updateEditorContent(fileToDisplay);
+        }, 100);
+      }
+    }
   };
 
   // Use our custom language client hook
@@ -598,52 +692,108 @@ const MonacoEditor: React.FC = () => {
   // Get active file
   const activeFile = openFiles.find((file) => file.id === activeFileId) || null;
 
-  // Handle file selection
-  const handleSelectFile = (node: FileNode) => {
-    if (!node.isFolder) {
-      // Check if file is already open
-      const isFileOpen = openFiles.some((file) => file.id === node.id);
+  // Function to update editor content
+  const updateEditorContent = useCallback((file: FileNode) => {
+    if (!editorRef.current || !monacoRef.current) {
+      console.warn('Editor not ready yet');
+      return;
+    }
 
-      if (!isFileOpen) {
-        // Add to open files
-        setOpenFiles((prev) => [...prev, node]);
+    // Determine language by file extension
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    let language = 'plaintext';
+
+    if (extension === 'js') language = 'javascript';
+    if (extension === 'ts') language = 'typescript';
+    if (extension === 'jsx' || extension === 'tsx') language = 'typescript';
+    if (extension === 'json') language = 'json';
+    if (extension === 'html') language = 'html';
+    if (extension === 'css') language = 'css';
+    if (extension === 'st') language = IEC61131_LANGUAGE_ID; // IEC61131-3 Structured Text
+
+    try {
+      // Create a unique URI for the model
+      const uri = monacoRef.current.Uri.parse(`file:///${file.id}`);
+
+      // Check if a model with this URI already exists
+      let model = monacoRef.current.editor.getModel(uri);
+
+      if (model) {
+        model.setValue(file.content || '');
+      } else {
+        model = monacoRef.current.editor.createModel(
+          file.content || '',
+          language,
+          uri,
+        );
       }
 
-      // Set as active file
-      setActiveFileId(node.id);
+      // Set the model to the editor
+      editorRef.current.setModel(model);
+    } catch (error) {
+      console.error('Error updating editor content:', error);
 
-      // Update editor content
+      // Fallback to the old method
+      editorRef.current.setValue(file.content || '');
+    }
+
+    // Focus the editor
+    setTimeout(() => {
       if (editorRef.current) {
-        editorRef.current.setValue(node.content || '');
+        editorRef.current.focus();
+      }
+    }, 100);
+  }, []);
 
-        // Determine language by file extension
-        const extension = node.name.split('.').pop()?.toLowerCase();
-        let language = 'plaintext';
+  // Handle file selection
+  const handleSelectFile = useCallback(
+    (node: FileNode) => {
+      if (!node.isFolder) {
+        // Check if file is already open
+        const isFileOpen = openFiles.some((file) => file.id === node.id);
 
-        if (extension === 'js') language = 'javascript';
-        if (extension === 'ts') language = 'typescript';
-        if (extension === 'jsx' || extension === 'tsx') language = 'typescript';
-        if (extension === 'json') language = 'json';
-        if (extension === 'html') language = 'html';
-        if (extension === 'css') language = 'css';
-        if (extension === 'st') language = IEC61131_LANGUAGE_ID; // IEC61131-3 Structured Text
-
-        // Set language mode
-        if (monacoRef.current) {
-          monacoRef.current.editor.setModelLanguage(
-            editorRef.current.getModel()!,
-            language,
-          );
+        if (!isFileOpen) {
+          // Add to open files
+          setOpenFiles((prev) => [...prev, node]);
         }
+
+        // Set as active file
+        setActiveFileId(node.id);
+
+        // Ensure we have a reference to the editor before trying to update content
+        if (!editorRef.current || !monacoRef.current) {
+          // We'll update the content when the editor is ready via the useEffect below
+          return;
+        }
+
+        // Update editor content immediately
+        updateEditorContent(node);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [openFiles, updateEditorContent],
+  );
+
+  // Update editor content when activeFileId changes
+  useEffect(() => {
+    if (activeFileId && editorRef.current && monacoRef.current) {
+      const activeFile = openFiles.find((file) => file.id === activeFileId);
+
+      if (activeFile) {
+        // Force a delay before updating content to ensure the editor is ready
+        setTimeout(() => {
+          updateEditorContent(activeFile);
+        }, 50);
       }
     }
-  };
+  }, [activeFileId, openFiles, updateEditorContent]);
 
   // Handle tab click
   const handleTabClick = (fileId: string) => {
     const file = openFiles.find((f) => f.id === fileId);
     if (file) {
-      handleSelectFile(file);
+      // Set as active file
+      setActiveFileId(file.id);
     }
   };
 
@@ -711,8 +861,21 @@ const MonacoEditor: React.FC = () => {
     };
   }, [activeFile, files]);
 
+  // Update files if initialFiles changes
+  useEffect(() => {
+    if (initialFiles) {
+      setFiles(initialFiles);
+    }
+  }, [initialFiles]);
+
   return (
     <div className="h-full flex flex-col">
+      {/* Loading indicator */}
+      {loadingExamples && (
+        <div className="absolute top-0 right-0 bg-blue-500 text-white px-2 py-1 text-xs">
+          Loading examples...
+        </div>
+      )}
       <div className="h-full flex">
         <Resizable
           defaultSize={{ width: 250, height: '100%' }}
