@@ -10,7 +10,7 @@
     },
     {
       "name": "keyword.control.iec-61131",
-      "match": ""
+      "match": "\\b(END_TYPE|TYPE)\\b"
     },
     {
       "name": "string.quoted.double.iec-61131",

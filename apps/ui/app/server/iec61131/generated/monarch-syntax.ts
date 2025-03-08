@@ -1,7 +1,7 @@
 // Monarch syntax highlighting for the iec-61131 language.
 export default {
     keywords: [
-        
+        'END_TYPE','TYPE'
     ],
     operators: [
         
@@ -15,6 +15,9 @@ export default {
             { regex: /VAR_INPUT/, action: {"token":"VAR_INPUT"} },
             { regex: /VAR_OUTPUT/, action: {"token":"VAR_OUTPUT"} },
             { regex: /VAR_IN_OUT/, action: {"token":"VAR_IN_OUT"} },
+            { regex: /VAR_EXTERNAL/, action: {"token":"VAR_EXTERNAL"} },
+            { regex: /VAR_GLOBAL/, action: {"token":"VAR_GLOBAL"} },
+            { regex: /VAR_TEMP/, action: {"token":"VAR_TEMP"} },
             { regex: /END_PROGRAM/, action: {"token":"END_PROGRAM"} },
             { regex: /END_FUNCTION/, action: {"token":"END_FUNCTION"} },
             { regex: /END_WHILE/, action: {"token":"END_WHILE"} },
@@ -35,9 +38,11 @@ export default {
             { regex: /UNTIL/, action: {"token":"UNTIL"} },
             { regex: /ELSE/, action: {"token":"ELSE"} },
             { regex: /THEN/, action: {"token":"THEN"} },
+            { regex: /CONSTANT/, action: {"token":"CONSTANT"} },
+            { regex: /RETAIN/, action: {"token":"RETAIN"} },
             { regex: /VAR/, action: {"token":"VAR"} },
             { regex: /FOR/, action: {"token":"FOR"} },
-            { regex: /END/, action: {"token":"END"} },
+            { regex: /END/, action: { cases: { '@keywords': {"token":"keyword"}, '@default': {"token":"END"} }} },
             { regex: /IF/, action: {"token":"IF"} },
             { regex: /OF/, action: {"token":"OF"} },
             { regex: /TO/, action: {"token":"TO"} },
@@ -108,7 +113,7 @@ export default {
             { regex: /8#[0-7]+/, action: {"token":"OCT_NUMBER"} },
             { regex: /T#[0-9smhd_]+/, action: {"token":"TIME_LITERAL"} },
             { regex: /D#\d{4}-\d{1,2}-\d{1,2}/, action: {"token":"DATE_LITERAL"} },
-            { regex: /[a-zA-Z_][a-zA-Z0-9_]*/, action: {"token":"ID"} },
+            { regex: /[a-zA-Z_][a-zA-Z0-9_]*/, action: { cases: { '@keywords': {"token":"keyword"}, '@default': {"token":"ID"} }} },
             { regex: /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/, action: {"token":"number"} },
             { regex: /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/, action: {"token":"string"} },
             { regex: /<=/, action: {"token":"LESS_EQUAL"} },

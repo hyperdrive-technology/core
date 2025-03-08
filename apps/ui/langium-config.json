@@ -13,5 +13,5 @@
       }
     }
   ],
-  "out": "app/server/iec61131/generated"
+  "out": "app/server/iec61131/generated/grammar"
 }

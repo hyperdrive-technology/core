@@ -1,7 +1,7 @@
 grammar IEC61131
 
 entry Program:
-    (functions+=FunctionDef | functionBlocks+=FunctionBlock | programs+=ProgramDecl)*;
+    (functions+=FunctionDef | functionBlocks+=FunctionBlock | programs+=ProgramDecl | enumTypes+=EnumType)*;
 
 hidden terminal WS: /\s+/;
 hidden terminal ML_COMMENT: /\(\*[\s\S]*?\*\)/;
@@ -14,6 +14,9 @@ terminal END_FUNCTION_BLOCK: 'END_FUNCTION_BLOCK';
 terminal VAR_INPUT: 'VAR_INPUT';
 terminal VAR_OUTPUT: 'VAR_OUTPUT';
 terminal VAR_IN_OUT: 'VAR_IN_OUT';
+terminal VAR_EXTERNAL: 'VAR_EXTERNAL';
+terminal VAR_GLOBAL: 'VAR_GLOBAL';
+terminal VAR_TEMP: 'VAR_TEMP';
 terminal END_PROGRAM: 'END_PROGRAM';
 terminal END_FUNCTION: 'END_FUNCTION';
 terminal END_WHILE: 'END_WHILE';
@@ -36,6 +39,8 @@ terminal ELSIF: 'ELSIF';
 terminal UNTIL: 'UNTIL';
 terminal ELSE: 'ELSE';
 terminal THEN: 'THEN';
+terminal CONSTANT: 'CONSTANT';
+terminal RETAIN: 'RETAIN';
 terminal VAR: 'VAR';
 terminal FOR: 'FOR';
 terminal END: 'END';
@@ -173,7 +178,16 @@ ProgramBody:
     END;
 
 VarDeclaration:
-    (VAR | VAR_INPUT | VAR_OUTPUT | VAR_IN_OUT)
+    (
+        VAR |
+        VAR_INPUT |
+        VAR_OUTPUT |
+        VAR_IN_OUT |
+        VAR_TEMP |
+        VAR_EXTERNAL |
+        VAR_GLOBAL
+    )
+    (CONSTANT | RETAIN)?  // Optional modifiers
     variables+=VariableDecl (SEMICOLON variables+=VariableDecl)*
     END_VAR;
 
@@ -181,10 +195,13 @@ VariableDecl:
     name=ID COLON type=TypeDecl (INIT initialValue=Expression)?;
 
 TypeDecl:
-    ArrayType | StructType | SimpleType;
+    ArrayType | StructType | SimpleType | EnumTypeReference;
 
 ArrayType:
-    ARRAY LBRACKET start=(NUMBER|HEX_NUMBER|BIN_NUMBER) RANGE end=(NUMBER|HEX_NUMBER|BIN_NUMBER) RBRACKET OF type=TypeDecl;
+    ARRAY LBRACKET dimensions+=ArrayDimension (COMMA dimensions+=ArrayDimension)* RBRACKET OF type=TypeDecl;
+
+ArrayDimension:
+    start=(NUMBER|HEX_NUMBER|BIN_NUMBER) RANGE end=(NUMBER|HEX_NUMBER|BIN_NUMBER);
 
 StructType:
     STRUCT
@@ -193,6 +210,17 @@ StructType:
 
 SimpleType:
     name=ID;
+
+EnumType:
+    'TYPE' name=ID COLON LPAREN
+        enumValues+=EnumValue (COMMA enumValues+=EnumValue)*
+    RPAREN SEMICOLON 'END_TYPE';
+
+EnumValue:
+    name=ID (ASSIGN value=NUMBER)?;
+
+EnumTypeReference:
+    type=[EnumType:ID];
 
 Statement:
     Assignment | IfStatement | WhileStatement | RepeatStatement | ForStatement | FunctionCall | CaseStatement | ReturnStatement;
@@ -206,8 +234,14 @@ LeftExpression:
 ElementAccess:
     member=ID (LBRACKET index=Expression RBRACKET)?;
 
+// Add this new rule for common function call structure
+Call:
+    (func=[FunctionDef:ID] | variable=[VariableDecl:ID])
+    LPAREN (args+=Argument (COMMA args+=Argument)*)? RPAREN;
+
+// Update FunctionCall to use the common Call rule
 FunctionCall:
-    (func=[FunctionDef:ID] | variable=[VariableDecl:ID]) LPAREN (args+=Argument (COMMA args+=Argument)*)? RPAREN SEMICOLON;
+    call=Call SEMICOLON;
 
 Argument:
     (name=ID ASSIGN)? value=Expression;
@@ -248,25 +282,27 @@ Expression:
     OrExpression;
 
 OrExpression:
-    left=AndExpression (operators+=(OR|XOR) right+=AndExpression)*;
+    left=AndExpression ({infer BinaryExpression.left=current} operator=(OR|XOR) right=AndExpression)*;
 
 AndExpression:
-    left=EqualityExpression (operators+=AND right+=EqualityExpression)*;
+    left=EqualityExpression ({infer BinaryExpression.left=current} operator=AND right=EqualityExpression)*;
 
 EqualityExpression:
-    left=RelationalExpression (operators+=(EQUAL|NOT_EQUAL) right+=RelationalExpression)*;
+    left=RelationalExpression ({infer BinaryExpression.left=current} operator=(EQUAL|NOT_EQUAL) right=RelationalExpression)*;
 
 RelationalExpression:
-    left=AdditiveExpression (operators+=(LESS|LESS_EQUAL|GREATER|GREATER_EQUAL) right+=AdditiveExpression)*;
+    left=AdditiveExpression ({infer BinaryExpression.left=current} operator=(LESS|LESS_EQUAL|GREATER|GREATER_EQUAL) right=AdditiveExpression)*;
 
 AdditiveExpression:
-    left=MultiplicativeExpression (operators+=(PLUS|MINUS) right+=MultiplicativeExpression)*;
+    left=MultiplicativeExpression ({infer BinaryExpression.left=current} operator=(PLUS|MINUS) right=MultiplicativeExpression)*;
 
 MultiplicativeExpression:
-    left=PrimaryExpression (operators+=(MULTIPLY|DIVIDE|MOD) right+=PrimaryExpression)*;
+    left=PrimaryExpression ({infer BinaryExpression.left=current} operator=(MULTIPLY|DIVIDE|MOD) right=PrimaryExpression)*;
 
 PrimaryExpression:
     LPAREN Expression RPAREN |
+    {infer UnaryExpression} operator=NOT operand=PrimaryExpression |
+    {infer UnaryExpression} operator=MINUS operand=PrimaryExpression |
     Literal |
     FunctionCallExpression |
     VariableReference;
@@ -280,5 +316,6 @@ BoolLiteral returns boolean:
 VariableReference:
     elements+=ElementAccess (DOT elements+=ElementAccess)*;
 
+// Update FunctionCallExpression to use the common Call rule
 FunctionCallExpression:
-    (func=[FunctionDef:ID] | variable=[VariableDecl:ID]) LPAREN (args+=Argument (COMMA args+=Argument)*)? RPAREN;
+    call=Call;

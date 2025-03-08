@@ -16,6 +16,9 @@ export const IEC61131Terminals = {
     VAR_INPUT: /VAR_INPUT/,
     VAR_OUTPUT: /VAR_OUTPUT/,
     VAR_IN_OUT: /VAR_IN_OUT/,
+    VAR_EXTERNAL: /VAR_EXTERNAL/,
+    VAR_GLOBAL: /VAR_GLOBAL/,
+    VAR_TEMP: /VAR_TEMP/,
     END_PROGRAM: /END_PROGRAM/,
     END_FUNCTION: /END_FUNCTION/,
     END_WHILE: /END_WHILE/,
@@ -36,6 +39,8 @@ export const IEC61131Terminals = {
     UNTIL: /UNTIL/,
     ELSE: /ELSE/,
     THEN: /THEN/,
+    CONSTANT: /CONSTANT/,
+    RETAIN: /RETAIN/,
     VAR: /VAR/,
     FOR: /FOR/,
     END: /END/,
@@ -51,6 +56,7 @@ export const IEC61131Terminals = {
     AND: /AND/,
     OR: /OR/,
     XOR: /XOR/,
+    NOT: /NOT/,
     MOD: /MOD/,
     HEX_NUMBER: /16#[0-9A-Fa-f]+/,
     BIN_NUMBER: /2#[01]+/,
@@ -85,7 +91,9 @@ export const IEC61131Terminals = {
 
 export type IEC61131TerminalNames = keyof typeof IEC61131Terminals;
 
-export type IEC61131KeywordNames = never;
+export type IEC61131KeywordNames = 
+    | "END_TYPE"
+    | "TYPE";
 
 export type IEC61131TokenNames = IEC61131TerminalNames | IEC61131KeywordNames;
 
@@ -103,7 +111,7 @@ export function isExpression(item: unknown): item is Expression {
     return reflection.isInstance(item, Expression);
 }
 
-export type PrimaryExpression = Expression | FunctionCallExpression | Literal | VariableReference;
+export type PrimaryExpression = Expression | FunctionCallExpression | Literal | UnaryExpression | VariableReference;
 
 export const PrimaryExpression = 'PrimaryExpression';
 
@@ -119,7 +127,7 @@ export function isStatement(item: unknown): item is Statement {
     return reflection.isInstance(item, Statement);
 }
 
-export type TypeDecl = ArrayType | SimpleType | StructType;
+export type TypeDecl = ArrayType | EnumTypeReference | SimpleType | StructType;
 
 export const TypeDecl = 'TypeDecl';
 
@@ -128,11 +136,8 @@ export function isTypeDecl(item: unknown): item is TypeDecl {
 }
 
 export interface AdditiveExpression extends AstNode {
-    readonly $container: RelationalExpression;
-    readonly $type: 'AdditiveExpression';
+    readonly $type: 'AdditiveExpression' | 'BinaryExpression';
     left: MultiplicativeExpression;
-    operators: Array<string>;
-    right: Array<MultiplicativeExpression>;
 }
 
 export const AdditiveExpression = 'AdditiveExpression';
@@ -142,11 +147,8 @@ export function isAdditiveExpression(item: unknown): item is AdditiveExpression 
 }
 
 export interface AndExpression extends AstNode {
-    readonly $container: OrExpression;
-    readonly $type: 'AndExpression';
+    readonly $type: 'AndExpression' | 'BinaryExpression';
     left: EqualityExpression;
-    operators: Array<string>;
-    right: Array<EqualityExpression>;
 }
 
 export const AndExpression = 'AndExpression';
@@ -156,7 +158,7 @@ export function isAndExpression(item: unknown): item is AndExpression {
 }
 
 export interface Argument extends AstNode {
-    readonly $container: FunctionCall | FunctionCallExpression;
+    readonly $container: Call;
     readonly $type: 'Argument';
     name?: string;
     value: Expression;
@@ -168,11 +170,23 @@ export function isArgument(item: unknown): item is Argument {
     return reflection.isInstance(item, Argument);
 }
 
+export interface ArrayDimension extends AstNode {
+    readonly $container: ArrayType;
+    readonly $type: 'ArrayDimension';
+    end: number | string;
+    start: number | string;
+}
+
+export const ArrayDimension = 'ArrayDimension';
+
+export function isArrayDimension(item: unknown): item is ArrayDimension {
+    return reflection.isInstance(item, ArrayDimension);
+}
+
 export interface ArrayType extends AstNode {
     readonly $container: ArrayType | FunctionDef | VariableDecl;
     readonly $type: 'ArrayType';
-    end: number | string;
-    start: number | string;
+    dimensions: Array<ArrayDimension>;
     type: TypeDecl;
 }
 
@@ -193,6 +207,20 @@ export const Assignment = 'Assignment';
 
 export function isAssignment(item: unknown): item is Assignment {
     return reflection.isInstance(item, Assignment);
+}
+
+export interface Call extends AstNode {
+    readonly $container: FunctionCall | FunctionCallExpression;
+    readonly $type: 'Call';
+    args: Array<Argument>;
+    func?: Reference<FunctionDef>;
+    variable?: Reference<VariableDecl>;
+}
+
+export const Call = 'Call';
+
+export function isCall(item: unknown): item is Call {
+    return reflection.isInstance(item, Call);
 }
 
 export interface CaseStatement extends AstNode {
@@ -223,12 +251,47 @@ export function isElementAccess(item: unknown): item is ElementAccess {
     return reflection.isInstance(item, ElementAccess);
 }
 
+export interface EnumType extends AstNode {
+    readonly $container: Program;
+    readonly $type: 'EnumType';
+    enumValues: Array<EnumValue>;
+    name: string;
+}
+
+export const EnumType = 'EnumType';
+
+export function isEnumType(item: unknown): item is EnumType {
+    return reflection.isInstance(item, EnumType);
+}
+
+export interface EnumTypeReference extends AstNode {
+    readonly $container: ArrayType | FunctionDef | VariableDecl;
+    readonly $type: 'EnumTypeReference';
+    type: Reference<EnumType>;
+}
+
+export const EnumTypeReference = 'EnumTypeReference';
+
+export function isEnumTypeReference(item: unknown): item is EnumTypeReference {
+    return reflection.isInstance(item, EnumTypeReference);
+}
+
+export interface EnumValue extends AstNode {
+    readonly $container: EnumType;
+    readonly $type: 'EnumValue';
+    name: string;
+    value?: number;
+}
+
+export const EnumValue = 'EnumValue';
+
+export function isEnumValue(item: unknown): item is EnumValue {
+    return reflection.isInstance(item, EnumValue);
+}
+
 export interface EqualityExpression extends AstNode {
-    readonly $container: AndExpression;
-    readonly $type: 'EqualityExpression';
+    readonly $type: 'BinaryExpression' | 'EqualityExpression';
     left: RelationalExpression;
-    operators: Array<string>;
-    right: Array<RelationalExpression>;
 }
 
 export const EqualityExpression = 'EqualityExpression';
@@ -270,9 +333,7 @@ export function isFunctionBlock(item: unknown): item is FunctionBlock {
 export interface FunctionCall extends AstNode {
     readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
     readonly $type: 'FunctionCall';
-    args: Array<Argument>;
-    func?: Reference<FunctionDef>;
-    variable?: Reference<VariableDecl>;
+    call: Call;
 }
 
 export const FunctionCall = 'FunctionCall';
@@ -282,11 +343,9 @@ export function isFunctionCall(item: unknown): item is FunctionCall {
 }
 
 export interface FunctionCallExpression extends AstNode {
-    readonly $container: MultiplicativeExpression;
+    readonly $container: BinaryExpression | MultiplicativeExpression | UnaryExpression;
     readonly $type: 'FunctionCallExpression';
-    args: Array<Argument>;
-    func?: Reference<FunctionDef>;
-    variable?: Reference<VariableDecl>;
+    call: Call;
 }
 
 export const FunctionCallExpression = 'FunctionCallExpression';
@@ -339,7 +398,7 @@ export function isLeftExpression(item: unknown): item is LeftExpression {
 }
 
 export interface Literal extends AstNode {
-    readonly $container: MultiplicativeExpression;
+    readonly $container: BinaryExpression | MultiplicativeExpression | UnaryExpression;
     readonly $type: 'Literal';
     value?: BoolLiteral | number | string;
 }
@@ -351,11 +410,8 @@ export function isLiteral(item: unknown): item is Literal {
 }
 
 export interface MultiplicativeExpression extends AstNode {
-    readonly $container: AdditiveExpression;
-    readonly $type: 'MultiplicativeExpression';
+    readonly $type: 'BinaryExpression' | 'MultiplicativeExpression';
     left: PrimaryExpression;
-    operators: Array<string>;
-    right: Array<PrimaryExpression>;
 }
 
 export const MultiplicativeExpression = 'MultiplicativeExpression';
@@ -365,11 +421,8 @@ export function isMultiplicativeExpression(item: unknown): item is Multiplicativ
 }
 
 export interface OrExpression extends AstNode {
-    readonly $container: Argument | Assignment | CaseStatement | ElementAccess | ForStatement | IfStatement | MultiplicativeExpression | RepeatStatement | ReturnStatement | VariableDecl | WhileStatement;
-    readonly $type: 'OrExpression';
+    readonly $type: 'BinaryExpression' | 'OrExpression';
     left: AndExpression;
-    operators: Array<string>;
-    right: Array<AndExpression>;
 }
 
 export const OrExpression = 'OrExpression';
@@ -380,6 +433,7 @@ export function isOrExpression(item: unknown): item is OrExpression {
 
 export interface Program extends AstNode {
     readonly $type: 'Program';
+    enumTypes: Array<EnumType>;
     functionBlocks: Array<FunctionBlock>;
     functions: Array<FunctionDef>;
     programs: Array<ProgramDecl>;
@@ -418,11 +472,8 @@ export function isProgramDecl(item: unknown): item is ProgramDecl {
 }
 
 export interface RelationalExpression extends AstNode {
-    readonly $container: EqualityExpression;
-    readonly $type: 'RelationalExpression';
+    readonly $type: 'BinaryExpression' | 'RelationalExpression';
     left: AdditiveExpression;
-    operators: Array<string>;
-    right: Array<AdditiveExpression>;
 }
 
 export const RelationalExpression = 'RelationalExpression';
@@ -480,6 +531,19 @@ export function isStructType(item: unknown): item is StructType {
     return reflection.isInstance(item, StructType);
 }
 
+export interface UnaryExpression extends AstNode {
+    readonly $container: BinaryExpression | MultiplicativeExpression | UnaryExpression;
+    readonly $type: 'UnaryExpression';
+    operand: PrimaryExpression;
+    operator: string;
+}
+
+export const UnaryExpression = 'UnaryExpression';
+
+export function isUnaryExpression(item: unknown): item is UnaryExpression {
+    return reflection.isInstance(item, UnaryExpression);
+}
+
 export interface VarDeclaration extends AstNode {
     readonly $container: FunctionBlock | FunctionDef | ProgramDecl;
     readonly $type: 'VarDeclaration';
@@ -507,7 +571,7 @@ export function isVariableDecl(item: unknown): item is VariableDecl {
 }
 
 export interface VariableReference extends AstNode {
-    readonly $container: MultiplicativeExpression;
+    readonly $container: BinaryExpression | MultiplicativeExpression | UnaryExpression;
     readonly $type: 'VariableReference';
     elements: Array<ElementAccess>;
 }
@@ -531,14 +595,33 @@ export function isWhileStatement(item: unknown): item is WhileStatement {
     return reflection.isInstance(item, WhileStatement);
 }
 
+export interface BinaryExpression extends AdditiveExpression, AndExpression, EqualityExpression, MultiplicativeExpression, OrExpression, RelationalExpression {
+    readonly $type: 'BinaryExpression';
+    left: AdditiveExpression | AndExpression | EqualityExpression | MultiplicativeExpression | OrExpression | RelationalExpression;
+    operator: string;
+    right: AdditiveExpression | AndExpression | EqualityExpression | MultiplicativeExpression | PrimaryExpression | RelationalExpression;
+}
+
+export const BinaryExpression = 'BinaryExpression';
+
+export function isBinaryExpression(item: unknown): item is BinaryExpression {
+    return reflection.isInstance(item, BinaryExpression);
+}
+
 export type IEC61131AstType = {
     AdditiveExpression: AdditiveExpression
     AndExpression: AndExpression
     Argument: Argument
+    ArrayDimension: ArrayDimension
     ArrayType: ArrayType
     Assignment: Assignment
+    BinaryExpression: BinaryExpression
+    Call: Call
     CaseStatement: CaseStatement
     ElementAccess: ElementAccess
+    EnumType: EnumType
+    EnumTypeReference: EnumTypeReference
+    EnumValue: EnumValue
     EqualityExpression: EqualityExpression
     Expression: Expression
     ForStatement: ForStatement
@@ -562,6 +645,7 @@ export type IEC61131AstType = {
     Statement: Statement
     StructType: StructType
     TypeDecl: TypeDecl
+    UnaryExpression: UnaryExpression
     VarDeclaration: VarDeclaration
     VariableDecl: VariableDecl
     VariableReference: VariableReference
@@ -571,12 +655,13 @@ export type IEC61131AstType = {
 export class IEC61131AstReflection extends AbstractAstReflection {
 
     getAllTypes(): string[] {
-        return [AdditiveExpression, AndExpression, Argument, ArrayType, Assignment, CaseStatement, ElementAccess, EqualityExpression, Expression, ForStatement, FunctionBlock, FunctionCall, FunctionCallExpression, FunctionDef, IfStatement, LeftExpression, Literal, MultiplicativeExpression, OrExpression, PrimaryExpression, Program, ProgramBody, ProgramDecl, RelationalExpression, RepeatStatement, ReturnStatement, SimpleType, Statement, StructType, TypeDecl, VarDeclaration, VariableDecl, VariableReference, WhileStatement];
+        return [AdditiveExpression, AndExpression, Argument, ArrayDimension, ArrayType, Assignment, BinaryExpression, Call, CaseStatement, ElementAccess, EnumType, EnumTypeReference, EnumValue, EqualityExpression, Expression, ForStatement, FunctionBlock, FunctionCall, FunctionCallExpression, FunctionDef, IfStatement, LeftExpression, Literal, MultiplicativeExpression, OrExpression, PrimaryExpression, Program, ProgramBody, ProgramDecl, RelationalExpression, RepeatStatement, ReturnStatement, SimpleType, Statement, StructType, TypeDecl, UnaryExpression, VarDeclaration, VariableDecl, VariableReference, WhileStatement];
     }
 
     protected override computeIsSubtype(subtype: string, supertype: string): boolean {
         switch (subtype) {
             case ArrayType:
+            case EnumTypeReference:
             case SimpleType:
             case StructType: {
                 return this.isSubtype(TypeDecl, supertype);
@@ -591,9 +676,13 @@ export class IEC61131AstReflection extends AbstractAstReflection {
             case WhileStatement: {
                 return this.isSubtype(Statement, supertype);
             }
+            case BinaryExpression: {
+                return this.isSubtype(AdditiveExpression, supertype) || this.isSubtype(AndExpression, supertype) || this.isSubtype(EqualityExpression, supertype) || this.isSubtype(MultiplicativeExpression, supertype) || this.isSubtype(OrExpression, supertype) || this.isSubtype(RelationalExpression, supertype);
+            }
             case Expression:
             case FunctionCallExpression:
             case Literal:
+            case UnaryExpression:
             case VariableReference: {
                 return this.isSubtype(PrimaryExpression, supertype);
             }
@@ -609,13 +698,14 @@ export class IEC61131AstReflection extends AbstractAstReflection {
     getReferenceType(refInfo: ReferenceInfo): string {
         const referenceId = `${refInfo.container.$type}:${refInfo.property}`;
         switch (referenceId) {
-            case 'FunctionCall:func':
-            case 'FunctionCallExpression:func': {
+            case 'Call:func': {
                 return FunctionDef;
             }
-            case 'FunctionCall:variable':
-            case 'FunctionCallExpression:variable': {
+            case 'Call:variable': {
                 return VariableDecl;
+            }
+            case 'EnumTypeReference:type': {
+                return EnumType;
             }
             default: {
                 throw new Error(`${referenceId} is not a valid reference id.`);
@@ -629,9 +719,7 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                 return {
                     name: AdditiveExpression,
                     properties: [
-                        { name: 'left' },
-                        { name: 'operators', defaultValue: [] },
-                        { name: 'right', defaultValue: [] }
+                        { name: 'left' }
                     ]
                 };
             }
@@ -639,9 +727,7 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                 return {
                     name: AndExpression,
                     properties: [
-                        { name: 'left' },
-                        { name: 'operators', defaultValue: [] },
-                        { name: 'right', defaultValue: [] }
+                        { name: 'left' }
                     ]
                 };
             }
@@ -654,12 +740,20 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     ]
                 };
             }
+            case ArrayDimension: {
+                return {
+                    name: ArrayDimension,
+                    properties: [
+                        { name: 'end' },
+                        { name: 'start' }
+                    ]
+                };
+            }
             case ArrayType: {
                 return {
                     name: ArrayType,
                     properties: [
-                        { name: 'end' },
-                        { name: 'start' },
+                        { name: 'dimensions', defaultValue: [] },
                         { name: 'type' }
                     ]
                 };
@@ -670,6 +764,16 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     properties: [
                         { name: 'target' },
                         { name: 'value' }
+                    ]
+                };
+            }
+            case Call: {
+                return {
+                    name: Call,
+                    properties: [
+                        { name: 'args', defaultValue: [] },
+                        { name: 'func' },
+                        { name: 'variable' }
                     ]
                 };
             }
@@ -693,13 +797,37 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     ]
                 };
             }
+            case EnumType: {
+                return {
+                    name: EnumType,
+                    properties: [
+                        { name: 'enumValues', defaultValue: [] },
+                        { name: 'name' }
+                    ]
+                };
+            }
+            case EnumTypeReference: {
+                return {
+                    name: EnumTypeReference,
+                    properties: [
+                        { name: 'type' }
+                    ]
+                };
+            }
+            case EnumValue: {
+                return {
+                    name: EnumValue,
+                    properties: [
+                        { name: 'name' },
+                        { name: 'value' }
+                    ]
+                };
+            }
             case EqualityExpression: {
                 return {
                     name: EqualityExpression,
                     properties: [
-                        { name: 'left' },
-                        { name: 'operators', defaultValue: [] },
-                        { name: 'right', defaultValue: [] }
+                        { name: 'left' }
                     ]
                 };
             }
@@ -729,9 +857,7 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                 return {
                     name: FunctionCall,
                     properties: [
-                        { name: 'args', defaultValue: [] },
-                        { name: 'func' },
-                        { name: 'variable' }
+                        { name: 'call' }
                     ]
                 };
             }
@@ -739,9 +865,7 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                 return {
                     name: FunctionCallExpression,
                     properties: [
-                        { name: 'args', defaultValue: [] },
-                        { name: 'func' },
-                        { name: 'variable' }
+                        { name: 'call' }
                     ]
                 };
             }
@@ -788,9 +912,7 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                 return {
                     name: MultiplicativeExpression,
                     properties: [
-                        { name: 'left' },
-                        { name: 'operators', defaultValue: [] },
-                        { name: 'right', defaultValue: [] }
+                        { name: 'left' }
                     ]
                 };
             }
@@ -798,9 +920,7 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                 return {
                     name: OrExpression,
                     properties: [
-                        { name: 'left' },
-                        { name: 'operators', defaultValue: [] },
-                        { name: 'right', defaultValue: [] }
+                        { name: 'left' }
                     ]
                 };
             }
@@ -808,6 +928,7 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                 return {
                     name: Program,
                     properties: [
+                        { name: 'enumTypes', defaultValue: [] },
                         { name: 'functionBlocks', defaultValue: [] },
                         { name: 'functions', defaultValue: [] },
                         { name: 'programs', defaultValue: [] }
@@ -836,9 +957,7 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                 return {
                     name: RelationalExpression,
                     properties: [
-                        { name: 'left' },
-                        { name: 'operators', defaultValue: [] },
-                        { name: 'right', defaultValue: [] }
+                        { name: 'left' }
                     ]
                 };
             }
@@ -875,6 +994,15 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     ]
                 };
             }
+            case UnaryExpression: {
+                return {
+                    name: UnaryExpression,
+                    properties: [
+                        { name: 'operand' },
+                        { name: 'operator' }
+                    ]
+                };
+            }
             case VarDeclaration: {
                 return {
                     name: VarDeclaration,
@@ -907,6 +1035,16 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     properties: [
                         { name: 'condition' },
                         { name: 'statements', defaultValue: [] }
+                    ]
+                };
+            }
+            case BinaryExpression: {
+                return {
+                    name: BinaryExpression,
+                    properties: [
+                        { name: 'left' },
+                        { name: 'operator' },
+                        { name: 'right' }
                     ]
                 };
             }

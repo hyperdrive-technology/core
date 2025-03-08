@@ -1,7 +1,7 @@
 import * as monaco from 'monaco-editor';
 import { editor, languages } from 'monaco-editor';
 import monarchSyntax from './custom-monarch-syntax';
-import { IEC61131LanguageMetaData } from './generated/module';
+import { IEC61131LanguageMetaData } from './generated/grammar/module';
 
 // Constants
 const LANGUAGE_ID = IEC61131LanguageMetaData.languageId;

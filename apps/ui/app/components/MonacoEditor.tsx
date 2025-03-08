@@ -7,6 +7,7 @@ import {
   FilePlus,
   Folder,
   FolderOpen,
+  FolderPlus,
   X,
 } from 'lucide-react';
 import { editor } from 'monaco-editor';
@@ -16,6 +17,7 @@ import {
   IEC61131_LANGUAGE_ID,
   registerIEC61131Language,
 } from '../server/iec61131/language-service';
+import { CommandBar } from './CommandBar';
 import ConfirmationDialog from './ConfirmationDialog';
 import ContextMenu from './ContextMenu';
 import NewFileDialog from './NewFileDialog';
@@ -192,16 +194,25 @@ const FileExplorer: React.FC<{
       <div className="h-full">
         <div className="p-2 font-semibold border-b dark:border-gray-700 flex justify-between items-center">
           <span>Files</span>
-          <button
-            onClick={() => onAddFile(null, false)}
-            className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
-            title="Add new file"
-          >
-            <FilePlus className="h-4 w-4" />
-          </button>
+          <div className="flex space-x-1">
+            <button
+              onClick={() => onAddFile(null, false)}
+              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
+              title="Add new file"
+            >
+              <FilePlus className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => onAddFile(null, true)}
+              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
+              title="Add new folder"
+            >
+              <FolderPlus className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <div
-          className="overflow-auto h-[calc(100%-40px)]"
+          className="overflow-auto h-[calc(100%-6rem)]"
           onContextMenu={handleBackgroundContextMenu}
         >
           {files.map((file) => (
@@ -238,7 +249,8 @@ const EditorTab: React.FC<{
   isActive: boolean;
   onClick: () => void;
   onClose: () => void;
-}> = ({ file, isActive, onClick, onClose }) => {
+  hasUnsavedChanges: boolean;
+}> = ({ file, isActive, onClick, onClose, hasUnsavedChanges }) => {
   const handleClose = (e: React.MouseEvent) => {
     e.stopPropagation();
     onClose();
@@ -255,7 +267,15 @@ const EditorTab: React.FC<{
       onClick={onClick}
     >
       <File size={14} className="mr-2 text-gray-500" />
-      <span className="mr-2">{file.name}</span>
+      <span className="mr-2">
+        {file.name}
+        {hasUnsavedChanges && (
+          <span
+            className="inline-block mb-[1px] ml-1.5 h-2 w-2 rounded-full bg-gray-900 dark:bg-gray-100"
+            title="Unsaved changes"
+          />
+        )}
+      </span>
       <X
         size={14}
         className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
@@ -289,6 +309,19 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
     isOpen: false,
     node: null as FileNode | null,
   });
+
+  // Navigation history state
+  const [navHistory, setNavHistory] = useState<string[]>([]);
+  const [navPosition, setNavPosition] = useState(-1);
+  const [connected, setConnected] = useState(false);
+
+  // State for tracking unsaved changes
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // State for tracking which files have unsaved changes
+  const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
+
+  // Add a state for tracking the current project/folder
+  const [activeProject, setActiveProject] = useState<string | null>(null);
 
   // Auto-open the first file from initialFiles if provided
   useEffect(() => {
@@ -978,10 +1011,114 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   // Get active file
   const activeFile = openFiles.find((file) => file.id === activeFileId) || null;
 
-  // Handle file selection
+  // Navigation history handlers
+  const addToHistory = useCallback(
+    (fileId: string) => {
+      if (navPosition >= 0 && navHistory[navPosition] === fileId) {
+        return; // Don't add if it's the same as current
+      }
+
+      // Remove any forward history
+      const newHistory =
+        navPosition >= 0 ? navHistory.slice(0, navPosition + 1) : [];
+
+      setNavHistory([...newHistory, fileId]);
+      setNavPosition(newHistory.length);
+    },
+    [navHistory, navPosition],
+  );
+
+  const handleNavigateBack = () => {
+    if (navPosition > 0) {
+      const newPosition = navPosition - 1;
+      setNavPosition(newPosition);
+      const fileId = navHistory[newPosition];
+      // Find the file by ID and select it
+      const file = findFileById(files, fileId);
+      if (file) {
+        handleSelectFile(file, false); // false to not add to history again
+      }
+    }
+  };
+
+  const handleNavigateForward = () => {
+    if (navPosition < navHistory.length - 1) {
+      const newPosition = navPosition + 1;
+      setNavPosition(newPosition);
+      const fileId = navHistory[newPosition];
+      // Find the file by ID and select it
+      const file = findFileById(files, fileId);
+      if (file) {
+        handleSelectFile(file, false); // false to not add to history again
+      }
+    }
+  };
+
+  // Helper to find a file by ID
+  const findFileById = (nodes: FileNode[], id: string): FileNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) {
+        return node;
+      }
+      if (node.children) {
+        const found = findFileById(node.children, id);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Modified handleSelectFile to detect project (top-level folder) this file belongs to
   const handleSelectFile = useCallback(
-    (node: FileNode) => {
+    (node: FileNode, addHistory = true) => {
       if (!node.isFolder) {
+        // Find which project (top-level folder) this file belongs to
+        const findProjectForFile = (
+          nodes: FileNode[],
+          targetId: string,
+        ): string | null => {
+          // Helper function to search in the file tree
+          const findProject = (
+            currentNodes: FileNode[],
+            id: string,
+            currentParents: FileNode[] = [],
+          ): { found: boolean; projectName: string | null } => {
+            for (const n of currentNodes) {
+              // If this is the file we're looking for
+              if (n.id === id) {
+                // Check if this file has any parent (which would be the project)
+                if (currentParents.length > 0) {
+                  // The first parent in the chain is the top-level folder (project)
+                  return { found: true, projectName: currentParents[0].name };
+                }
+                // File at root level - not in a project
+                return { found: true, projectName: null };
+              }
+
+              // If not found and we have a folder with children, search recursively
+              if (n.isFolder && n.children) {
+                const result = findProject(n.children, id, [
+                  ...currentParents,
+                  n,
+                ]);
+                if (result.found) {
+                  return result;
+                }
+              }
+            }
+            return { found: false, projectName: null };
+          };
+
+          const result = findProject(nodes, targetId);
+          return result.projectName;
+        };
+
+        // Find the project name for this file
+        const projectName = findProjectForFile(files, node.id);
+        setActiveProject(projectName);
+
         // Check if file is already open
         const isFileOpen = openFiles.some((file) => file.id === node.id);
 
@@ -992,6 +1129,11 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
 
         // Set active file
         setActiveFileId(node.id);
+
+        // Add to navigation history if needed
+        if (addHistory) {
+          addToHistory(node.id);
+        }
 
         // Wait until the editor is fully ready before displaying the file
         if (editorReady && editorRef.current && monacoRef.current) {
@@ -1014,9 +1156,8 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
           }, 50);
         }
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [openFiles, displayFileInEditor, editorReady],
+    [openFiles, displayFileInEditor, editorReady, addToHistory, files],
   );
 
   // Update editor content when activeFileId changes
@@ -1032,6 +1173,105 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
       }
     }
   }, [activeFileId, openFiles, displayFileInEditor]);
+
+  // Mark file as having unsaved changes when content changes
+  const handleContentChange = useCallback(() => {
+    if (activeFileId && editorRef.current) {
+      const currentContent = editorRef.current.getValue();
+      const activeFile = openFiles.find((file) => file.id === activeFileId);
+
+      if (activeFile && currentContent !== activeFile.content) {
+        setHasUnsavedChanges(true);
+        setUnsavedFileIds((prev) => {
+          const newSet = new Set(prev);
+          newSet.add(activeFileId);
+          return newSet;
+        });
+      }
+    }
+  }, [activeFileId, openFiles]);
+
+  // Set up editor change event listener
+  useEffect(() => {
+    if (editorRef.current && monacoRef.current) {
+      const disposable = editorRef.current.onDidChangeModelContent(() => {
+        handleContentChange();
+      });
+      return () => disposable.dispose();
+    }
+  }, [editorRef.current, monacoRef.current, handleContentChange]);
+
+  // Reset unsaved changes when saving files
+  const handleSaveFile = useCallback(() => {
+    if (activeFileId && editorRef.current) {
+      const currentContent = editorRef.current.getValue();
+
+      // Update the file content in our state
+      setFiles((prevFiles) => {
+        const updateFileContent = (nodes: FileNode[]): FileNode[] => {
+          return nodes.map((node) => {
+            if (node.id === activeFileId) {
+              return { ...node, content: currentContent };
+            }
+            if (node.children) {
+              return {
+                ...node,
+                children: updateFileContent(node.children),
+              };
+            }
+            return node;
+          });
+        };
+
+        return updateFileContent(prevFiles);
+      });
+
+      // Also update in open files
+      setOpenFiles((prevOpenFiles) => {
+        return prevOpenFiles.map((file) => {
+          if (file.id === activeFileId) {
+            return { ...file, content: currentContent };
+          }
+          return file;
+        });
+      });
+
+      // Reset unsaved changes flag for this file
+      setUnsavedFileIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(activeFileId);
+        return newSet;
+      });
+
+      // Only reset global unsaved changes if no files are unsaved
+      if (unsavedFileIds.size <= 1) {
+        setHasUnsavedChanges(false);
+      }
+    }
+  }, [activeFileId, editorRef, unsavedFileIds]);
+
+  // Modified deploy function to save before deploying
+  const handleDeploy = useCallback(() => {
+    // Save any unsaved changes first
+    if (hasUnsavedChanges) {
+      handleSaveFile();
+    }
+
+    // Now deploy the saved code
+    console.log('Deploying code to runtime...');
+    // You'd likely call an API here
+    alert('Deploying code to runtime (placeholder)');
+  }, [hasUnsavedChanges, handleSaveFile]);
+
+  // Toggle connection to runtime
+  const handleToggleConnection = useCallback(() => {
+    // In a real implementation, this would connect to or disconnect from the runtime
+    setConnected((prevConnected) => !prevConnected);
+    console.log(
+      `${connected ? 'Disconnecting from' : 'Connecting to'} runtime...`,
+    );
+    // You'd likely call an API here
+  }, [connected]);
 
   // Handle tab click
   const handleTabClick = (fileId: string) => {
@@ -1279,8 +1519,61 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
     setDeleteDialog({ isOpen: false, node: null });
   };
 
+  // Set up keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+S or Cmd+S to save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSaveFile();
+      }
+
+      // Alt+Left for back navigation
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleNavigateBack();
+      }
+
+      // Alt+Right for forward navigation
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNavigateForward();
+      }
+
+      // Ctrl+Shift+D or Cmd+Shift+D to deploy
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'd') {
+        e.preventDefault();
+        handleDeploy();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSaveFile, handleNavigateBack, handleNavigateForward, handleDeploy]);
+
+  // Helper function to format project name
+  const formatProjectName = (name: string | null): string => {
+    if (!name) return 'No Project Selected';
+
+    // Convert from kebab-case or snake_case to Title Case
+    return name
+      .replace(/[-_]/g, ' ') // Replace dashes and underscores with spaces
+      .split(' ')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
   return (
     <div className="h-full flex flex-col">
+      <CommandBar
+        projectName={formatProjectName(activeProject)}
+        onNavigateBack={handleNavigateBack}
+        onNavigateForward={handleNavigateForward}
+        onDeploy={handleDeploy}
+        onToggleConnection={handleToggleConnection}
+        isConnected={connected}
+        hasUnsavedChanges={hasUnsavedChanges}
+      />
       <div className="h-full flex">
         <Resizable
           defaultSize={{ width: '20%', height: '100%' }}
@@ -1299,7 +1592,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         </Resizable>
 
         <div className="flex-1 flex flex-col">
-          <div className="flex border-b dark:border-gray-700 bg-gray-100 dark:bg-gray-900">
+          <div className="flex overflow-x-auto border-b dark:border-gray-700">
             {openFiles.map((file) => (
               <EditorTab
                 key={file.id}
@@ -1307,12 +1600,13 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
                 isActive={file.id === activeFileId}
                 onClick={() => handleTabClick(file.id)}
                 onClose={() => handleTabClose(file.id)}
+                hasUnsavedChanges={unsavedFileIds.has(file.id)}
               />
             ))}
           </div>
           <div className="flex-1 h-full">
             <Editor
-              height="100%"
+              height="calc(100vh - 6rem)"
               defaultLanguage="plaintext"
               theme={monacoTheme}
               onMount={handleEditorDidMount}

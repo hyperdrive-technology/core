@@ -9,9 +9,9 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="min-h-screen bg-background flex flex-1 w-screen">
+      <div className="h-screen bg-background flex w-screen overflow-hidden">
         <AppSidebar />
-        <div className="flex-1 flex flex-col">
+        <div className="flex flex-col flex-1">
           <main className="flex-1">{children}</main>
         </div>
       </div>
