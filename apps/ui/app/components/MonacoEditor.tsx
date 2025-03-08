@@ -59,7 +59,6 @@ const TreeNode: React.FC<{
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
-    console.log('TreeNode handleContextMenu called for:', node.name);
     e.preventDefault();
     e.stopPropagation();
     onContextMenu(e, node);
@@ -135,13 +134,8 @@ const FileExplorer: React.FC<{
   });
 
   const handleContextMenu = (e: React.MouseEvent, node: FileNode) => {
-    console.log('FileExplorer handleContextMenu called for:', node.name);
     e.preventDefault();
     e.stopPropagation(); // Ensure the event doesn't bubble up
-
-    // Capture the mouse position from the event
-    const { clientX, clientY } = e;
-    console.log('Context menu position:', { x: clientX, y: clientY });
 
     // Update context menu state
     setContextMenu({
@@ -149,45 +143,28 @@ const FileExplorer: React.FC<{
       node,
       type: node.isFolder ? 'folder' : 'file',
     });
-
-    console.log('Context menu state updated:', {
-      show: true,
-      node: node.name,
-      type: node.isFolder ? 'folder' : 'file',
-    });
   };
 
   const handleBackgroundContextMenu = (e: React.MouseEvent) => {
-    console.log('Background context menu triggered');
     e.preventDefault();
     e.stopPropagation(); // Ensure the event doesn't bubble up
 
-    // Capture the mouse position from the event
-    const { clientX, clientY } = e;
-    console.log('Background context menu position:', {
-      x: clientX,
-      y: clientY,
-    });
-
     // If we're clicking directly on a node, the node's onContextMenu handler will take care of it
     // This handler is only for clicks on the background
+
     setContextMenu({
       show: true,
       node: null,
       type: 'background',
     });
-    console.log('Background context menu state updated');
   };
 
   const closeContextMenu = () => {
-    console.log('Closing context menu');
     setContextMenu((prev) => ({ ...prev, show: false }));
   };
 
   // Add a useEffect to log when context menu state changes
-  useEffect(() => {
-    console.log('Context menu state:', contextMenu);
-  }, [contextMenu]);
+  useEffect(() => {}, [contextMenu]);
 
   return (
     <>
@@ -406,7 +383,6 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   const displayFileInEditor = useCallback(
     (file: FileNode) => {
       if (!editorRef.current || !monacoRef.current || !editorReady) {
-        console.warn('Editor not ready yet');
         return;
       }
 
@@ -438,6 +414,15 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
           model &&
           editorRef.current.getModel()?.uri.toString() === uri.toString()
         ) {
+          // If the model is already active and being edited, don't overwrite it
+          const currentModel = editorRef.current.getModel();
+          if (currentModel && currentModel.uri.toString() === uri.toString()) {
+            // The model is already active, don't replace its content
+            // Just restore focus
+            editorRef.current.focus();
+            return;
+          }
+
           savedSelection = editorRef.current.getSelection();
           savedScrollPosition = editorRef.current.getScrollTop();
         }
@@ -459,9 +444,11 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
           editorRef.current.setModel(model);
 
           // Only update content for existing models if necessary - for new models the content is already set
-          if (!isNewModel) {
+          // AND only if we're switching to a different file, not if the file is already active
+          if (!isNewModel && !editorRef.current.hasTextFocus()) {
             // Check if content actually needs updating (avoid unnecessary changes)
             const currentContent = model.getValue();
+
             if (currentContent !== file.content && file.content !== undefined) {
               // Save current position
               const position = editorRef.current.getPosition();
@@ -524,15 +511,11 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
           }, 10);
         }
       } catch (error) {
-        console.error('Error updating editor content:', error);
-
         // Fallback approach with additional safety checks
         if (editorRef.current) {
           try {
             editorRef.current.setValue(file.content || '');
-          } catch (fallbackError) {
-            console.error('Fallback editor update also failed:', fallbackError);
-          }
+          } catch (fallbackError) {}
         }
       }
     },
@@ -544,15 +527,24 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
 
+    // Set editor options for better usability
+    editor.updateOptions({
+      autoIndent: 'advanced',
+      cursorBlinking: 'smooth',
+      quickSuggestions: true,
+      scrollBeyondLastLine: false,
+      acceptSuggestionOnCommitCharacter: false,
+      acceptSuggestionOnEnter: 'off',
+      wrappingStrategy: 'advanced',
+    });
+
     // Set the initial theme
     monaco.editor.setTheme(monacoTheme);
 
     // Register the IEC61131 language (Structured Text)
     try {
       registerIEC61131Language(monaco);
-    } catch (error) {
-      console.error('Failed to register IEC61131 language:', error);
-    }
+    } catch (error) {}
 
     // Configure Monaco if needed
     monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
@@ -825,10 +817,8 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   // Use our custom language client hook - but only after editor is ready
   useEffect(() => {
     if (editorReady && monacoRef.current && editorRef.current) {
-      console.log('Initializing language client with delay');
       // Start language client after editor is fully ready
       const delay = setTimeout(() => {
-        console.log('Language client initialized');
         // This is where we would normally call the hook, but we can't call hooks conditionally
         // Instead, we'll set a flag that will be used by the language client hook
         const worker = new Worker(
@@ -862,8 +852,6 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
     try {
       // Handle worker messages
       worker.onmessage = (event) => {
-        console.log('Message from worker:', event.data);
-
         // Handle diagnostics
         if (
           event.data.type === 'diagnostics' &&
@@ -902,10 +890,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
             setTimeout(() => {
               isProcessingDiagnostics = false;
             }, 0);
-          } catch (error) {
-            console.error('Error setting model markers:', error);
-            isProcessingDiagnostics = false;
-          }
+          } catch (error) {}
         }
       };
 
@@ -919,46 +904,46 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
 
         currentModel = editor.getModel();
         if (currentModel) {
-          modelChangeSubscription = currentModel.onDidChangeContent(() => {
-            try {
-              // Skip if we're currently processing diagnostics to avoid infinite loops
-              if (isProcessingDiagnostics) {
-                return;
-              }
+          modelChangeSubscription = currentModel.onDidChangeContent(
+            (_event) => {
+              try {
+                // Skip if we're currently processing diagnostics to avoid infinite loops
+                if (isProcessingDiagnostics) {
+                  return;
+                }
 
-              // Skip if this is a programmatic content update
-              // We added a flag to the model in the displayFileInEditor function
-              if ((currentModel as any)._isSettingContent) {
-                return;
-              }
+                // Skip if this is a programmatic content update
+                // We added a flag to the model in the displayFileInEditor function
+                if ((currentModel as any)._isSettingContent) {
+                  return;
+                }
 
-              // Get current content
-              const content = currentModel?.getValue() || '';
+                // Get current content
+                const content = currentModel?.getValue() || '';
 
-              // Skip if content hasn't changed
-              if (content === lastContent) {
-                return;
-              }
+                // Skip if content hasn't changed
+                if (content === lastContent) {
+                  return;
+                }
 
-              lastContent = content;
+                lastContent = content;
 
-              // Debounce content changes to reduce worker messages and only send after typing pauses
-              if (contentChangeDebounce) {
-                clearTimeout(contentChangeDebounce);
-              }
+                // Debounce content changes to reduce worker messages and only send after typing pauses
+                if (contentChangeDebounce) {
+                  clearTimeout(contentChangeDebounce);
+                }
 
-              contentChangeDebounce = setTimeout(() => {
-                worker.postMessage({
-                  type: 'documentChange',
-                  uri: currentModel?.uri.toString(),
-                  content,
-                });
-                contentChangeDebounce = null;
-              }, 800); // Longer delay to ensure user has finished typing
-            } catch (error) {
-              console.error('Error posting to worker:', error);
-            }
-          });
+                contentChangeDebounce = setTimeout(() => {
+                  worker.postMessage({
+                    type: 'documentChange',
+                    uri: currentModel?.uri.toString(),
+                    content,
+                  });
+                  contentChangeDebounce = null;
+                }, 800); // Longer delay to ensure user has finished typing
+              } catch (error) {}
+            },
+          );
         }
       };
 
@@ -1003,7 +988,6 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         }
       };
     } catch (error) {
-      console.error('Error initializing language worker:', error);
       return () => {};
     }
   }
@@ -1139,20 +1123,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         if (editorReady && editorRef.current && monacoRef.current) {
           // Display the file with a small delay to ensure all components are ready
           setTimeout(() => {
-            try {
-              displayFileInEditor(node);
-            } catch (error) {
-              console.error('Error displaying file in editor:', error);
-
-              // Simple fallback for error cases
-              if (editorRef.current) {
-                try {
-                  editorRef.current.setValue(node.content || '');
-                } catch (fallbackError) {
-                  console.error('Fallback display also failed:', fallbackError);
-                }
-              }
-            }
+            displayFileInEditor(node);
           }, 50);
         }
       }
@@ -1162,17 +1133,14 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
 
   // Update editor content when activeFileId changes
   useEffect(() => {
-    if (activeFileId && editorRef.current && monacoRef.current) {
+    if (activeFileId && editorReady) {
+      // Find the file by ID
       const activeFile = openFiles.find((file) => file.id === activeFileId);
-
       if (activeFile) {
-        // Force a delay before updating content to ensure the editor is ready
-        setTimeout(() => {
-          displayFileInEditor(activeFile);
-        }, 50);
+        displayFileInEditor(activeFile);
       }
     }
-  }, [activeFileId, openFiles, displayFileInEditor]);
+  }, [activeFileId, openFiles, displayFileInEditor, editorReady]);
 
   // Mark file as having unsaved changes when content changes
   const handleContentChange = useCallback(() => {
@@ -1227,14 +1195,13 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
       });
 
       // Also update in open files
-      setOpenFiles((prevOpenFiles) => {
-        return prevOpenFiles.map((file) => {
-          if (file.id === activeFileId) {
-            return { ...file, content: currentContent };
-          }
-          return file;
-        });
-      });
+      setOpenFiles((prevOpenFiles) =>
+        prevOpenFiles.map((file) =>
+          file.id === activeFileId
+            ? { ...file, content: currentContent }
+            : file,
+        ),
+      );
 
       // Reset unsaved changes flag for this file
       setUnsavedFileIds((prev) => {
@@ -1258,8 +1225,6 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
     }
 
     // Now deploy the saved code
-    console.log('Deploying code to runtime...');
-    // You'd likely call an API here
     alert('Deploying code to runtime (placeholder)');
   }, [hasUnsavedChanges, handleSaveFile]);
 
@@ -1267,10 +1232,6 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   const handleToggleConnection = useCallback(() => {
     // In a real implementation, this would connect to or disconnect from the runtime
     setConnected((prevConnected) => !prevConnected);
-    console.log(
-      `${connected ? 'Disconnecting from' : 'Connecting to'} runtime...`,
-    );
-    // You'd likely call an API here
   }, [connected]);
 
   // Handle tab click
@@ -1315,8 +1276,11 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
 
       const newContent = editorRef.current?.getValue() || '';
 
+      // Special check for content changes, including whitespace
+      const contentChanged = activeFile.content !== newContent;
+
       // Only update if content has actually changed
-      if (activeFile.content !== newContent) {
+      if (contentChanged) {
         const updateFileContent = (nodes: FileNode[]): FileNode[] => {
           return nodes.map((node) => {
             if (node.id === activeFile.id) {
@@ -1358,9 +1322,10 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
       }
 
       // Set a new timeout to update after a delay
+      // Use a shorter delay for better responsiveness
       debounceTimeout = setTimeout(() => {
         updateContent();
-      }, 300); // 300ms debounce
+      }, 150); // Reduced from 300ms to 150ms for better responsiveness
     };
 
     const disposable =
