@@ -1,6 +1,6 @@
 import * as monaco from 'monaco-editor';
 import { editor, languages } from 'monaco-editor';
-import monarchSyntax from './custom-monarch-syntax';
+import { monarchSyntax } from './custom-monarch-syntax';
 import { IEC61131LanguageMetaData } from './generated/grammar/module';
 
 // Constants
@@ -40,6 +40,13 @@ export function setupLangiumMonaco(
       ['FUNCTION', 'END_FUNCTION'],
       ['FUNCTION_BLOCK', 'END_FUNCTION_BLOCK'],
       ['VAR', 'END_VAR'],
+      ['VAR_INPUT', 'END_VAR'],
+      ['VAR_OUTPUT', 'END_VAR'],
+      ['VAR_IN_OUT', 'END_VAR'],
+      ['VAR_TEMP', 'END_VAR'],
+      ['VAR_EXTERNAL', 'END_VAR'],
+      ['VAR_GLOBAL', 'END_VAR'],
+      ['STRUCT', 'END_STRUCT'],
     ],
     autoClosingPairs: [
       { open: '{', close: '}' },
@@ -59,11 +66,11 @@ export function setupLangiumMonaco(
     folding: {
       markers: {
         start: new RegExp(
-          '^\\s*(IF|CASE|FOR|WHILE|REPEAT|FUNCTION|FUNCTION_BLOCK|PROGRAM)\\b',
+          '^\\s*(IF|CASE|FOR|WHILE|REPEAT|FUNCTION|FUNCTION_BLOCK|PROGRAM|VAR|VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|VAR_TEMP|VAR_EXTERNAL|VAR_GLOBAL|STRUCT)\\b',
           'i',
         ),
         end: new RegExp(
-          '^\\s*(END_IF|END_CASE|END_FOR|END_WHILE|END_REPEAT|END_FUNCTION|END_FUNCTION_BLOCK|END_PROGRAM)\\b',
+          '^\\s*(END_IF|END_CASE|END_FOR|END_WHILE|END_REPEAT|END_FUNCTION|END_FUNCTION_BLOCK|END_PROGRAM|END_VAR|END_STRUCT)\\b',
           'i',
         ),
       },
@@ -81,15 +88,14 @@ export function setupLangiumMonaco(
     rules: [
       // Keywords and sections
       { token: 'keyword', foreground: '0000FF', fontStyle: 'bold' },
-      { token: 'section.keyword', foreground: '800080', fontStyle: 'bold' }, // Purple for section headers
 
       // Types
       { token: 'type', foreground: '008000' },
 
       // Operators
-      { token: 'operator.word', foreground: 'D2691E', fontStyle: 'bold' }, // Special styling for word operators like AND, OR
+      { token: 'operator.word', foreground: 'D2691E', fontStyle: 'bold' },
       { token: 'operator', foreground: 'D2691E' },
-      { token: 'operator.assignment', foreground: 'D2691E', fontStyle: 'bold' }, // Make assignments stand out
+      { token: 'operator.assignment', foreground: 'D2691E', fontStyle: 'bold' },
 
       // Constants
       { token: 'constant', foreground: '0000FF', fontStyle: 'italic' },
@@ -110,12 +116,12 @@ export function setupLangiumMonaco(
       { token: 'comment', foreground: '008000', fontStyle: 'italic' },
 
       // Functions and variables
-      { token: 'function', foreground: 'B00020' }, // Function declarations
-      { token: 'variable.function', foreground: 'B00020' }, // Function calls from variables
-      { token: 'variable.declaration', foreground: '0000A0' }, // Variable declarations
-      { token: 'parameter.name', foreground: '8A2BE2' }, // Parameter names
-      { token: 'predefined', foreground: '0070C1' }, // Built-in functions
-      { token: 'variable.name', foreground: '000000' }, // Regular variables
+      { token: 'function', foreground: 'B00020' },
+      { token: 'variable.function', foreground: 'B00020' },
+      { token: 'variable.declaration', foreground: '0000A0' },
+      { token: 'parameter.name', foreground: '8A2BE2' },
+      { token: 'predefined', foreground: '0070C1' },
+      { token: 'variable.name', foreground: '000000' },
 
       // Brackets and delimiters
       { token: '@brackets', foreground: '000000' },
@@ -292,10 +298,10 @@ function needsSemicolon(line: string): boolean {
 
   // Check statements that should have semicolons
   if (
-    /:=/.test(trimmed) || // Assignment
-    /[A-Za-z_]\w*\s*\(/.test(trimmed) || // Function call
-    /\bRETURN\b/i.test(trimmed) || // RETURN statement
-    /[+\-*\/=<>]/.test(trimmed) // Operators
+    /:=/.test(trimmed) ||
+    /[A-Za-z_]\w*\s*\(/.test(trimmed) ||
+    /\bRETURN\b/i.test(trimmed) ||
+    /[+\-*\/=<>]/.test(trimmed)
   ) {
     return true;
   }

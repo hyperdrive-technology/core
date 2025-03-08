@@ -19,6 +19,12 @@ export const monarchSyntax: languages.IMonarchLanguage = {
     'END_FUNCTION_BLOCK',
     'VAR',
     'END_VAR',
+    'VAR_INPUT',
+    'VAR_OUTPUT',
+    'VAR_IN_OUT',
+    'VAR_EXTERNAL',
+    'VAR_GLOBAL',
+    'VAR_TEMP',
     'BEGIN',
     'END',
     'IF',
@@ -44,9 +50,6 @@ export const monarchSyntax: languages.IMonarchLanguage = {
     'CASE',
     'END_CASE',
   ],
-
-  // Define section keywords (treated specially)
-  sectionKeywords: ['VAR_INPUT', 'VAR_OUTPUT', 'VAR_IN_OUT'],
 
   // Define type keywords
   typeKeywords: [
@@ -137,14 +140,11 @@ export const monarchSyntax: languages.IMonarchLanguage = {
   escapes:
     /\\(?:[abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
 
-  // Override the tokenizer to enhance syntax highlighting
+  // Replace the tokenizer completely with our enhanced version
   tokenizer: {
     root: [
       // Comments first to ensure proper handling
       { include: '@whitespace' },
-
-      // Special section keywords with a different highlighting than regular keywords
-      [/VAR_(?:INPUT|OUTPUT|IN_OUT)/, 'section.keyword'],
 
       // Function calls with variable names (like Tank1, Tank2)
       [/([a-zA-Z_]\w*)(\s*)(\()/, ['variable.function', 'white', '@brackets']],
@@ -197,7 +197,6 @@ export const monarchSyntax: languages.IMonarchLanguage = {
           cases: {
             '@typeKeywords': 'type',
             '@keywords': 'keyword',
-            '@sectionKeywords': 'section.keyword',
             '@constants': 'constant',
             '@operators': { token: 'operator.word' }, // Special styling for word operators
             '@builtinFunctions': 'predefined',
