@@ -278,43 +278,28 @@ CaseStatement:
 ReturnStatement:
     RETURN (value=Expression)? SEMICOLON;
 
+// Completely flattened expression hierarchy without circular references
 Expression:
-    OrExpression;
-
-OrExpression:
-    left=AndExpression ({infer BinaryExpression.left=current} operator=(OR|XOR) right=AndExpression)*;
-
-AndExpression:
-    left=EqualityExpression ({infer BinaryExpression.left=current} operator=AND right=EqualityExpression)*;
-
-EqualityExpression:
-    left=RelationalExpression ({infer BinaryExpression.left=current} operator=(EQUAL|NOT_EQUAL) right=RelationalExpression)*;
-
-RelationalExpression:
-    left=AdditiveExpression ({infer BinaryExpression.left=current} operator=(LESS|LESS_EQUAL|GREATER|GREATER_EQUAL) right=AdditiveExpression)*;
-
-AdditiveExpression:
-    left=MultiplicativeExpression ({infer BinaryExpression.left=current} operator=(PLUS|MINUS) right=MultiplicativeExpression)*;
-
-MultiplicativeExpression:
-    left=PrimaryExpression ({infer BinaryExpression.left=current} operator=(MULTIPLY|DIVIDE|MOD) right=PrimaryExpression)*;
+    {infer BinaryExpression} left=PrimaryExpression operator=BinaryOperator right=Expression |
+    {infer UnaryExpression} operator=UnaryOperator operand=PrimaryExpression |
+    PrimaryExpression;
 
 PrimaryExpression:
-    LPAREN Expression RPAREN |
-    {infer UnaryExpression} operator=NOT operand=PrimaryExpression |
-    {infer UnaryExpression} operator=MINUS operand=PrimaryExpression |
-    Literal |
-    FunctionCallExpression |
-    VariableReference;
+    {infer ParenExpression} LPAREN expr=Expression RPAREN |
+    {infer Literal} value=(NUMBER | HEX_NUMBER | BIN_NUMBER | OCT_NUMBER | TIME_LITERAL | DATE_LITERAL | STRING | BoolLiteral) |
+    {infer FunctionCallExpression} call=Call |
+    {infer VariableReference} elements+=ElementAccess (DOT elements+=ElementAccess)*;
 
-Literal:
-    {infer Literal} value=(NUMBER | HEX_NUMBER | BIN_NUMBER | OCT_NUMBER | TIME_LITERAL | DATE_LITERAL | STRING | BoolLiteral);
+BinaryOperator returns string:
+    OR | XOR | AND | EQUAL | NOT_EQUAL |
+    LESS | LESS_EQUAL | GREATER | GREATER_EQUAL |
+    PLUS | MINUS | MULTIPLY | DIVIDE | MOD;
+
+UnaryOperator returns string:
+    NOT | MINUS;
 
 BoolLiteral returns boolean:
     TRUE | FALSE;
-
-VariableReference:
-    elements+=ElementAccess (DOT elements+=ElementAccess)*;
 
 // Update FunctionCallExpression to use the common Call rule
 FunctionCallExpression:

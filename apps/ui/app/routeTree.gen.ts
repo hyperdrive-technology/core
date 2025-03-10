@@ -14,7 +14,7 @@ import { Route as rootRoute } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app/route'
 import { Route as IndexImport } from './routes/index'
 import { Route as AppLogicImport } from './routes/_app/logic'
-import { Route as AppEditorImport } from './routes/_app/editor'
+import { Route as AppControlImport } from './routes/_app/control'
 import { Route as AppLogicProjectIdImport } from './routes/_app/logic/$projectId'
 
 // Create/Update Routes
@@ -36,9 +36,9 @@ const AppLogicRoute = AppLogicImport.update({
   getParentRoute: () => AppRouteRoute,
 } as any)
 
-const AppEditorRoute = AppEditorImport.update({
-  id: '/editor',
-  path: '/editor',
+const AppControlRoute = AppControlImport.update({
+  id: '/control',
+  path: '/control',
   getParentRoute: () => AppRouteRoute,
 } as any)
 
@@ -66,11 +66,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRoute
     }
-    '/_app/editor': {
-      id: '/_app/editor'
-      path: '/editor'
-      fullPath: '/editor'
-      preLoaderRoute: typeof AppEditorImport
+    '/_app/control': {
+      id: '/_app/control'
+      path: '/control'
+      fullPath: '/control'
+      preLoaderRoute: typeof AppControlImport
       parentRoute: typeof AppRouteImport
     }
     '/_app/logic': {
@@ -105,12 +105,12 @@ const AppLogicRouteWithChildren = AppLogicRoute._addFileChildren(
 )
 
 interface AppRouteRouteChildren {
-  AppEditorRoute: typeof AppEditorRoute
+  AppControlRoute: typeof AppControlRoute
   AppLogicRoute: typeof AppLogicRouteWithChildren
 }
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
-  AppEditorRoute: AppEditorRoute,
+  AppControlRoute: AppControlRoute,
   AppLogicRoute: AppLogicRouteWithChildren,
 }
 
@@ -121,7 +121,7 @@ const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '': typeof AppRouteRouteWithChildren
-  '/editor': typeof AppEditorRoute
+  '/control': typeof AppControlRoute
   '/logic': typeof AppLogicRouteWithChildren
   '/logic/$projectId': typeof AppLogicProjectIdRoute
 }
@@ -129,7 +129,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '': typeof AppRouteRouteWithChildren
-  '/editor': typeof AppEditorRoute
+  '/control': typeof AppControlRoute
   '/logic': typeof AppLogicRouteWithChildren
   '/logic/$projectId': typeof AppLogicProjectIdRoute
 }
@@ -138,21 +138,21 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/_app': typeof AppRouteRouteWithChildren
-  '/_app/editor': typeof AppEditorRoute
+  '/_app/control': typeof AppControlRoute
   '/_app/logic': typeof AppLogicRouteWithChildren
   '/_app/logic/$projectId': typeof AppLogicProjectIdRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '' | '/editor' | '/logic' | '/logic/$projectId'
+  fullPaths: '/' | '' | '/control' | '/logic' | '/logic/$projectId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '' | '/editor' | '/logic' | '/logic/$projectId'
+  to: '/' | '' | '/control' | '/logic' | '/logic/$projectId'
   id:
     | '__root__'
     | '/'
     | '/_app'
-    | '/_app/editor'
+    | '/_app/control'
     | '/_app/logic'
     | '/_app/logic/$projectId'
   fileRoutesById: FileRoutesById
@@ -188,12 +188,12 @@ export const routeTree = rootRoute
     "/_app": {
       "filePath": "_app/route.tsx",
       "children": [
-        "/_app/editor",
+        "/_app/control",
         "/_app/logic"
       ]
     },
-    "/_app/editor": {
-      "filePath": "_app/editor.tsx",
+    "/_app/control": {
+      "filePath": "_app/control.tsx",
       "parent": "/_app"
     },
     "/_app/logic": {

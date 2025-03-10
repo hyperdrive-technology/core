@@ -97,13 +97,19 @@ export type IEC61131KeywordNames =
 
 export type IEC61131TokenNames = IEC61131TerminalNames | IEC61131KeywordNames;
 
+export type BinaryOperator = string;
+
+export function isBinaryOperator(item: unknown): item is BinaryOperator {
+    return (typeof item === 'string' && (/OR/.test(item) || /XOR/.test(item) || /AND/.test(item) || /=/.test(item) || /<>/.test(item) || /</.test(item) || /<=/.test(item) || />/.test(item) || />=/.test(item) || /\+/.test(item) || /-/.test(item) || /\*/.test(item) || /\//.test(item) || /MOD/.test(item)));
+}
+
 export type BoolLiteral = boolean;
 
 export function isBoolLiteral(item: unknown): item is BoolLiteral {
     return typeof item === 'boolean';
 }
 
-export type Expression = OrExpression;
+export type Expression = BinaryExpression | PrimaryExpression | UnaryExpression;
 
 export const Expression = 'Expression';
 
@@ -111,7 +117,7 @@ export function isExpression(item: unknown): item is Expression {
     return reflection.isInstance(item, Expression);
 }
 
-export type PrimaryExpression = Expression | FunctionCallExpression | Literal | UnaryExpression | VariableReference;
+export type PrimaryExpression = FunctionCallExpression | Literal | ParenExpression | VariableReference;
 
 export const PrimaryExpression = 'PrimaryExpression';
 
@@ -135,26 +141,10 @@ export function isTypeDecl(item: unknown): item is TypeDecl {
     return reflection.isInstance(item, TypeDecl);
 }
 
-export interface AdditiveExpression extends AstNode {
-    readonly $type: 'AdditiveExpression' | 'BinaryExpression';
-    left: MultiplicativeExpression;
-}
+export type UnaryOperator = string;
 
-export const AdditiveExpression = 'AdditiveExpression';
-
-export function isAdditiveExpression(item: unknown): item is AdditiveExpression {
-    return reflection.isInstance(item, AdditiveExpression);
-}
-
-export interface AndExpression extends AstNode {
-    readonly $type: 'AndExpression' | 'BinaryExpression';
-    left: EqualityExpression;
-}
-
-export const AndExpression = 'AndExpression';
-
-export function isAndExpression(item: unknown): item is AndExpression {
-    return reflection.isInstance(item, AndExpression);
+export function isUnaryOperator(item: unknown): item is UnaryOperator {
+    return (typeof item === 'string' && (/NOT/.test(item) || /-/.test(item)));
 }
 
 export interface Argument extends AstNode {
@@ -207,6 +197,20 @@ export const Assignment = 'Assignment';
 
 export function isAssignment(item: unknown): item is Assignment {
     return reflection.isInstance(item, Assignment);
+}
+
+export interface BinaryExpression extends AstNode {
+    readonly $container: Argument | Assignment | BinaryExpression | CaseStatement | ElementAccess | ForStatement | IfStatement | ParenExpression | RepeatStatement | ReturnStatement | VariableDecl | WhileStatement;
+    readonly $type: 'BinaryExpression';
+    left: PrimaryExpression;
+    operator: BinaryOperator;
+    right: Expression;
+}
+
+export const BinaryExpression = 'BinaryExpression';
+
+export function isBinaryExpression(item: unknown): item is BinaryExpression {
+    return reflection.isInstance(item, BinaryExpression);
 }
 
 export interface Call extends AstNode {
@@ -289,17 +293,6 @@ export function isEnumValue(item: unknown): item is EnumValue {
     return reflection.isInstance(item, EnumValue);
 }
 
-export interface EqualityExpression extends AstNode {
-    readonly $type: 'BinaryExpression' | 'EqualityExpression';
-    left: RelationalExpression;
-}
-
-export const EqualityExpression = 'EqualityExpression';
-
-export function isEqualityExpression(item: unknown): item is EqualityExpression {
-    return reflection.isInstance(item, EqualityExpression);
-}
-
 export interface ForStatement extends AstNode {
     readonly $container: CaseStatement | ForStatement | IfStatement | ProgramBody | RepeatStatement | WhileStatement;
     readonly $type: 'ForStatement';
@@ -343,7 +336,7 @@ export function isFunctionCall(item: unknown): item is FunctionCall {
 }
 
 export interface FunctionCallExpression extends AstNode {
-    readonly $container: BinaryExpression | MultiplicativeExpression | UnaryExpression;
+    readonly $container: Argument | Assignment | BinaryExpression | CaseStatement | ElementAccess | ForStatement | IfStatement | ParenExpression | RepeatStatement | ReturnStatement | UnaryExpression | VariableDecl | WhileStatement;
     readonly $type: 'FunctionCallExpression';
     call: Call;
 }
@@ -398,9 +391,9 @@ export function isLeftExpression(item: unknown): item is LeftExpression {
 }
 
 export interface Literal extends AstNode {
-    readonly $container: BinaryExpression | MultiplicativeExpression | UnaryExpression;
+    readonly $container: Argument | Assignment | BinaryExpression | CaseStatement | ElementAccess | ForStatement | IfStatement | ParenExpression | RepeatStatement | ReturnStatement | UnaryExpression | VariableDecl | WhileStatement;
     readonly $type: 'Literal';
-    value?: BoolLiteral | number | string;
+    value: BoolLiteral | number | string;
 }
 
 export const Literal = 'Literal';
@@ -409,26 +402,16 @@ export function isLiteral(item: unknown): item is Literal {
     return reflection.isInstance(item, Literal);
 }
 
-export interface MultiplicativeExpression extends AstNode {
-    readonly $type: 'BinaryExpression' | 'MultiplicativeExpression';
-    left: PrimaryExpression;
+export interface ParenExpression extends AstNode {
+    readonly $container: Argument | Assignment | BinaryExpression | CaseStatement | ElementAccess | ForStatement | IfStatement | ParenExpression | RepeatStatement | ReturnStatement | UnaryExpression | VariableDecl | WhileStatement;
+    readonly $type: 'ParenExpression';
+    expr: Expression;
 }
 
-export const MultiplicativeExpression = 'MultiplicativeExpression';
+export const ParenExpression = 'ParenExpression';
 
-export function isMultiplicativeExpression(item: unknown): item is MultiplicativeExpression {
-    return reflection.isInstance(item, MultiplicativeExpression);
-}
-
-export interface OrExpression extends AstNode {
-    readonly $type: 'BinaryExpression' | 'OrExpression';
-    left: AndExpression;
-}
-
-export const OrExpression = 'OrExpression';
-
-export function isOrExpression(item: unknown): item is OrExpression {
-    return reflection.isInstance(item, OrExpression);
+export function isParenExpression(item: unknown): item is ParenExpression {
+    return reflection.isInstance(item, ParenExpression);
 }
 
 export interface Program extends AstNode {
@@ -469,17 +452,6 @@ export const ProgramDecl = 'ProgramDecl';
 
 export function isProgramDecl(item: unknown): item is ProgramDecl {
     return reflection.isInstance(item, ProgramDecl);
-}
-
-export interface RelationalExpression extends AstNode {
-    readonly $type: 'BinaryExpression' | 'RelationalExpression';
-    left: AdditiveExpression;
-}
-
-export const RelationalExpression = 'RelationalExpression';
-
-export function isRelationalExpression(item: unknown): item is RelationalExpression {
-    return reflection.isInstance(item, RelationalExpression);
 }
 
 export interface RepeatStatement extends AstNode {
@@ -532,10 +504,10 @@ export function isStructType(item: unknown): item is StructType {
 }
 
 export interface UnaryExpression extends AstNode {
-    readonly $container: BinaryExpression | MultiplicativeExpression | UnaryExpression;
+    readonly $container: Argument | Assignment | BinaryExpression | CaseStatement | ElementAccess | ForStatement | IfStatement | ParenExpression | RepeatStatement | ReturnStatement | VariableDecl | WhileStatement;
     readonly $type: 'UnaryExpression';
     operand: PrimaryExpression;
-    operator: string;
+    operator: UnaryOperator;
 }
 
 export const UnaryExpression = 'UnaryExpression';
@@ -571,7 +543,7 @@ export function isVariableDecl(item: unknown): item is VariableDecl {
 }
 
 export interface VariableReference extends AstNode {
-    readonly $container: BinaryExpression | MultiplicativeExpression | UnaryExpression;
+    readonly $container: Argument | Assignment | BinaryExpression | CaseStatement | ElementAccess | ForStatement | IfStatement | ParenExpression | RepeatStatement | ReturnStatement | UnaryExpression | VariableDecl | WhileStatement;
     readonly $type: 'VariableReference';
     elements: Array<ElementAccess>;
 }
@@ -595,22 +567,7 @@ export function isWhileStatement(item: unknown): item is WhileStatement {
     return reflection.isInstance(item, WhileStatement);
 }
 
-export interface BinaryExpression extends AdditiveExpression, AndExpression, EqualityExpression, MultiplicativeExpression, OrExpression, RelationalExpression {
-    readonly $type: 'BinaryExpression';
-    left: AdditiveExpression | AndExpression | EqualityExpression | MultiplicativeExpression | OrExpression | RelationalExpression;
-    operator: string;
-    right: AdditiveExpression | AndExpression | EqualityExpression | MultiplicativeExpression | PrimaryExpression | RelationalExpression;
-}
-
-export const BinaryExpression = 'BinaryExpression';
-
-export function isBinaryExpression(item: unknown): item is BinaryExpression {
-    return reflection.isInstance(item, BinaryExpression);
-}
-
 export type IEC61131AstType = {
-    AdditiveExpression: AdditiveExpression
-    AndExpression: AndExpression
     Argument: Argument
     ArrayDimension: ArrayDimension
     ArrayType: ArrayType
@@ -622,7 +579,6 @@ export type IEC61131AstType = {
     EnumType: EnumType
     EnumTypeReference: EnumTypeReference
     EnumValue: EnumValue
-    EqualityExpression: EqualityExpression
     Expression: Expression
     ForStatement: ForStatement
     FunctionBlock: FunctionBlock
@@ -632,13 +588,11 @@ export type IEC61131AstType = {
     IfStatement: IfStatement
     LeftExpression: LeftExpression
     Literal: Literal
-    MultiplicativeExpression: MultiplicativeExpression
-    OrExpression: OrExpression
+    ParenExpression: ParenExpression
     PrimaryExpression: PrimaryExpression
     Program: Program
     ProgramBody: ProgramBody
     ProgramDecl: ProgramDecl
-    RelationalExpression: RelationalExpression
     RepeatStatement: RepeatStatement
     ReturnStatement: ReturnStatement
     SimpleType: SimpleType
@@ -655,7 +609,7 @@ export type IEC61131AstType = {
 export class IEC61131AstReflection extends AbstractAstReflection {
 
     getAllTypes(): string[] {
-        return [AdditiveExpression, AndExpression, Argument, ArrayDimension, ArrayType, Assignment, BinaryExpression, Call, CaseStatement, ElementAccess, EnumType, EnumTypeReference, EnumValue, EqualityExpression, Expression, ForStatement, FunctionBlock, FunctionCall, FunctionCallExpression, FunctionDef, IfStatement, LeftExpression, Literal, MultiplicativeExpression, OrExpression, PrimaryExpression, Program, ProgramBody, ProgramDecl, RelationalExpression, RepeatStatement, ReturnStatement, SimpleType, Statement, StructType, TypeDecl, UnaryExpression, VarDeclaration, VariableDecl, VariableReference, WhileStatement];
+        return [Argument, ArrayDimension, ArrayType, Assignment, BinaryExpression, Call, CaseStatement, ElementAccess, EnumType, EnumTypeReference, EnumValue, Expression, ForStatement, FunctionBlock, FunctionCall, FunctionCallExpression, FunctionDef, IfStatement, LeftExpression, Literal, ParenExpression, PrimaryExpression, Program, ProgramBody, ProgramDecl, RepeatStatement, ReturnStatement, SimpleType, Statement, StructType, TypeDecl, UnaryExpression, VarDeclaration, VariableDecl, VariableReference, WhileStatement];
     }
 
     protected override computeIsSubtype(subtype: string, supertype: string): boolean {
@@ -676,18 +630,16 @@ export class IEC61131AstReflection extends AbstractAstReflection {
             case WhileStatement: {
                 return this.isSubtype(Statement, supertype);
             }
-            case BinaryExpression: {
-                return this.isSubtype(AdditiveExpression, supertype) || this.isSubtype(AndExpression, supertype) || this.isSubtype(EqualityExpression, supertype) || this.isSubtype(MultiplicativeExpression, supertype) || this.isSubtype(OrExpression, supertype) || this.isSubtype(RelationalExpression, supertype);
+            case BinaryExpression:
+            case PrimaryExpression:
+            case UnaryExpression: {
+                return this.isSubtype(Expression, supertype);
             }
-            case Expression:
             case FunctionCallExpression:
             case Literal:
-            case UnaryExpression:
+            case ParenExpression:
             case VariableReference: {
                 return this.isSubtype(PrimaryExpression, supertype);
-            }
-            case OrExpression: {
-                return this.isSubtype(Expression, supertype);
             }
             default: {
                 return false;
@@ -715,22 +667,6 @@ export class IEC61131AstReflection extends AbstractAstReflection {
 
     getTypeMetaData(type: string): TypeMetaData {
         switch (type) {
-            case AdditiveExpression: {
-                return {
-                    name: AdditiveExpression,
-                    properties: [
-                        { name: 'left' }
-                    ]
-                };
-            }
-            case AndExpression: {
-                return {
-                    name: AndExpression,
-                    properties: [
-                        { name: 'left' }
-                    ]
-                };
-            }
             case Argument: {
                 return {
                     name: Argument,
@@ -764,6 +700,16 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     properties: [
                         { name: 'target' },
                         { name: 'value' }
+                    ]
+                };
+            }
+            case BinaryExpression: {
+                return {
+                    name: BinaryExpression,
+                    properties: [
+                        { name: 'left' },
+                        { name: 'operator' },
+                        { name: 'right' }
                     ]
                 };
             }
@@ -820,14 +766,6 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     properties: [
                         { name: 'name' },
                         { name: 'value' }
-                    ]
-                };
-            }
-            case EqualityExpression: {
-                return {
-                    name: EqualityExpression,
-                    properties: [
-                        { name: 'left' }
                     ]
                 };
             }
@@ -908,19 +846,11 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     ]
                 };
             }
-            case MultiplicativeExpression: {
+            case ParenExpression: {
                 return {
-                    name: MultiplicativeExpression,
+                    name: ParenExpression,
                     properties: [
-                        { name: 'left' }
-                    ]
-                };
-            }
-            case OrExpression: {
-                return {
-                    name: OrExpression,
-                    properties: [
-                        { name: 'left' }
+                        { name: 'expr' }
                     ]
                 };
             }
@@ -950,14 +880,6 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                         { name: 'body' },
                         { name: 'name' },
                         { name: 'varDeclarations', defaultValue: [] }
-                    ]
-                };
-            }
-            case RelationalExpression: {
-                return {
-                    name: RelationalExpression,
-                    properties: [
-                        { name: 'left' }
                     ]
                 };
             }
@@ -1035,16 +957,6 @@ export class IEC61131AstReflection extends AbstractAstReflection {
                     properties: [
                         { name: 'condition' },
                         { name: 'statements', defaultValue: [] }
-                    ]
-                };
-            }
-            case BinaryExpression: {
-                return {
-                    name: BinaryExpression,
-                    properties: [
-                        { name: 'left' },
-                        { name: 'operator' },
-                        { name: 'right' }
                     ]
                 };
             }

@@ -1,362 +1,209 @@
 package websocket
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/inrush-io/inrush/apps/runtime/internal/runtime"
 )
 
+// Server handles WebSocket connections and HTTP API
 type Server struct {
+	router   *gin.Engine
 	runtime  *runtime.Runtime
 	upgrader websocket.Upgrader
-	clients  map[*Client]bool
-	mu       sync.RWMutex
+	clients  map[*websocket.Conn]bool
+	mutex    sync.Mutex
 }
 
-type Client struct {
-	conn          *websocket.Conn
-	server        *Server
-	send          chan []byte
-	subscriptions map[string]bool
-}
-
-type Message struct {
-	Type    string          `json:"type"`
-	Action  string          `json:"action"`
-	Payload json.RawMessage `json:"payload"`
-}
-
+// NewServer creates a new WebSocket server
 func NewServer(rt *runtime.Runtime) *Server {
-	return &Server{
+	server := &Server{
+		router:  gin.Default(),
 		runtime: rt,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
-				return true // Configure as needed
+				return true // Allow all origins for now
 			},
 		},
-		clients: make(map[*Client]bool),
+		clients: make(map[*websocket.Conn]bool),
+	}
+
+	// Set up routes
+	server.setupRoutes()
+
+	return server
+}
+
+// Start starts the HTTP server
+func (s *Server) Start(addr string) error {
+	return s.router.Run(addr)
+}
+
+// setupRoutes initializes the API routes
+func (s *Server) setupRoutes() {
+	// CORS middleware
+	s.router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	})
+
+	// WebSocket endpoint
+	s.router.GET("/ws", s.handleWebSocket)
+
+	// API endpoints
+	api := s.router.Group("/api")
+	{
+		// Deploy code
+		api.POST("/deploy", s.handleDeploy)
+
+		// Get runtime status
+		api.GET("/status", s.handleStatus)
+
+		// Get variables
+		api.GET("/variables", s.handleGetAllVariables)
+
+		// Get specific variable
+		api.GET("/variables/:name", s.handleGetVariable)
 	}
 }
 
-func (s *Server) Start(addr string) error {
-	http.HandleFunc("/ws", s.handleConnection)
-	return http.ListenAndServe(addr, nil)
-}
-
-func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
-	conn, err := s.upgrader.Upgrade(w, r, nil)
+// handleWebSocket handles WebSocket connections
+func (s *Server) handleWebSocket(c *gin.Context) {
+	// Upgrade the HTTP connection to a WebSocket connection
+	conn, err := s.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("Failed to upgrade connection: %v", err)
 		return
 	}
+	defer conn.Close()
 
-	client := &Client{
-		conn:          conn,
-		server:        s,
-		send:          make(chan []byte, 256),
-		subscriptions: make(map[string]bool),
-	}
+	// Register client
+	s.mutex.Lock()
+	s.clients[conn] = true
+	s.mutex.Unlock()
 
-	s.mu.Lock()
-	s.clients[client] = true
-	s.mu.Unlock()
-
-	go client.writePump()
-	go client.readPump()
-}
-
-func (c *Client) readPump() {
+	// Remove client when function returns
 	defer func() {
-		c.server.mu.Lock()
-		delete(c.server.clients, c)
-		c.server.mu.Unlock()
-		c.conn.Close()
+		s.mutex.Lock()
+		delete(s.clients, conn)
+		s.mutex.Unlock()
 	}()
 
+	// Start sending periodic updates
+	go s.sendPeriodicUpdates(conn)
+
+	// Handle incoming messages
 	for {
-		_, message, err := c.conn.ReadMessage()
+		_, message, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("Error reading message: %v", err)
 			}
 			break
 		}
 
-		var msg Message
-		if err := json.Unmarshal(message, &msg); err != nil {
-			log.Printf("Error unmarshaling message: %v", err)
-			continue
-		}
-
-		c.handleMessage(msg)
+		// Process message
+		log.Printf("Received message: %s", message)
 	}
 }
 
-func (c *Client) writePump() {
-	defer c.conn.Close()
+// sendPeriodicUpdates sends runtime status updates to the client
+func (s *Server) sendPeriodicUpdates(conn *websocket.Conn) {
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
 
 	for {
 		select {
-		case message, ok := <-c.send:
-			if !ok {
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
+		case <-ticker.C:
+			status := s.runtime.GetStatus()
+			variables := s.runtime.GetAllVariables()
+
+			update := map[string]interface{}{
+				"type":      "update",
+				"status":    status,
+				"variables": variables,
 			}
 
-			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
-				log.Printf("Error writing message: %v", err)
+			if err := conn.WriteJSON(update); err != nil {
+				log.Printf("Error sending update: %v", err)
 				return
 			}
 		}
 	}
 }
 
-func (c *Client) handleMessage(msg Message) {
-	switch msg.Type {
-	case "subscribe":
-		var payload struct {
-			Tags []string `json:"tags"`
-		}
-		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			log.Printf("Error unmarshaling subscribe payload: %v", err)
-			return
-		}
-
-		for _, tag := range payload.Tags {
-			c.subscriptions[tag] = true
-		}
-
-	case "write":
-		var payload struct {
-			Tag   string      `json:"tag"`
-			Value interface{} `json:"value"`
-		}
-		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			log.Printf("Error unmarshaling write payload: %v", err)
-			return
-		}
-
-		// Handle write operation
-
-	case "project":
-		switch msg.Action {
-		case "list":
-			c.handleListProjects(msg)
-		case "create":
-			c.handleCreateProject(msg)
-		case "load":
-			c.handleLoadProject(msg)
-		case "save":
-			c.handleSaveProject(msg)
-		}
+// handleDeploy handles code deployment requests
+func (s *Server) handleDeploy(c *gin.Context) {
+	var req runtime.DeployRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
+
+	// Deploy the code to the runtime
+	if err := s.runtime.DeployCode(req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "deployed", "path": req.FilePath})
+
+	// Notify all clients that code has been deployed
+	s.notifyClients(map[string]interface{}{
+		"type":    "deployment",
+		"path":    req.FilePath,
+		"success": true,
+	})
 }
 
-func (c *Client) handleListProjects(msg Message) {
-	// Get storage manager from server
-	sm := c.server.storageManager
-
-	// List projects
-	projects, err := sm.ListProjects(context.Background())
-	if err != nil {
-		c.sendError("Failed to list projects", err)
-		return
-	}
-
-	// Send response
-	response := struct {
-		Type    string          `json:"type"`
-		Action  string          `json:"action"`
-		Success bool            `json:"success"`
-		Data    json.RawMessage `json:"data"`
-	}{
-		Type:    "project",
-		Action:  "list",
-		Success: true,
-		Data:    projects,
-	}
-
-	responseBytes, err := json.Marshal(response)
-	if err != nil {
-		c.sendError("Failed to marshal response", err)
-		return
-	}
-
-	c.send <- responseBytes
+// handleStatus returns the current runtime status
+func (s *Server) handleStatus(c *gin.Context) {
+	status := s.runtime.GetStatus()
+	c.JSON(http.StatusOK, status)
 }
 
-func (c *Client) handleCreateProject(msg Message) {
-	var payload struct {
-		Name        string   `json:"name"`
-		Description string   `json:"description"`
-		Tags        []string `json:"tags,omitempty"`
-	}
-
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.sendError("Failed to parse create project payload", err)
-		return
-	}
-
-	// Get storage manager from server
-	sm := c.server.storageManager
-
-	// Create project
-	projectID, err := sm.CreateProject(context.Background(),
-		payload.Name, payload.Description, "user", payload.Tags)
-	if err != nil {
-		c.sendError("Failed to create project", err)
-		return
-	}
-
-	// Send response
-	response := struct {
-		Type    string `json:"type"`
-		Action  string `json:"action"`
-		Success bool   `json:"success"`
-		Data    struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}{
-		Type:    "project",
-		Action:  "create",
-		Success: true,
-		Data: struct {
-			ID string `json:"id"`
-		}{
-			ID: projectID,
-		},
-	}
-
-	responseBytes, err := json.Marshal(response)
-	if err != nil {
-		c.sendError("Failed to marshal response", err)
-		return
-	}
-
-	c.send <- responseBytes
+// handleGetAllVariables returns all variables
+func (s *Server) handleGetAllVariables(c *gin.Context) {
+	variables := s.runtime.GetAllVariables()
+	c.JSON(http.StatusOK, variables)
 }
 
-func (c *Client) handleLoadProject(msg Message) {
-	var payload struct {
-		ID string `json:"id"`
-	}
+// handleGetVariable returns a specific variable
+func (s *Server) handleGetVariable(c *gin.Context) {
+	name := c.Param("name")
+	variable, exists := s.runtime.GetVariable(name)
 
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.sendError("Failed to parse load project payload", err)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Variable not found"})
 		return
 	}
 
-	// Get storage manager from server
-	sm := c.server.storageManager
-
-	// Load project
-	projectDir, err := sm.LoadProject(context.Background(), payload.ID)
-	if err != nil {
-		c.sendError("Failed to load project", err)
-		return
-	}
-
-	// Read project metadata
-	metadataPath := filepath.Join(projectDir, "metadata.json")
-	metadataBytes, err := os.ReadFile(metadataPath)
-	if err != nil {
-		c.sendError("Failed to read project metadata", err)
-		return
-	}
-
-	// Send response
-	response := struct {
-		Type    string          `json:"type"`
-		Action  string          `json:"action"`
-		Success bool            `json:"success"`
-		Data    json.RawMessage `json:"data"`
-	}{
-		Type:    "project",
-		Action:  "load",
-		Success: true,
-		Data:    metadataBytes,
-	}
-
-	responseBytes, err := json.Marshal(response)
-	if err != nil {
-		c.sendError("Failed to marshal response", err)
-		return
-	}
-
-	c.send <- responseBytes
+	c.JSON(http.StatusOK, variable)
 }
 
-func (c *Client) handleSaveProject(msg Message) {
-	var payload struct {
-		ID string `json:"id"`
+// notifyClients sends a message to all connected WebSocket clients
+func (s *Server) notifyClients(message interface{}) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	for client := range s.clients {
+		if err := client.WriteJSON(message); err != nil {
+			log.Printf("Error sending message to client: %v", err)
+			client.Close()
+			delete(s.clients, client)
+		}
 	}
-
-	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		c.sendError("Failed to parse save project payload", err)
-		return
-	}
-
-	// Get storage manager from server
-	sm := c.server.storageManager
-
-	// Get project directory
-	projectDir := filepath.Join(sm.tempDir, payload.ID)
-
-	// Save project
-	if err := sm.SaveProject(context.Background(), payload.ID, projectDir); err != nil {
-		c.sendError("Failed to save project", err)
-		return
-	}
-
-	// Send response
-	response := struct {
-		Type    string `json:"type"`
-		Action  string `json:"action"`
-		Success bool   `json:"success"`
-	}{
-		Type:    "project",
-		Action:  "save",
-		Success: true,
-	}
-
-	responseBytes, err := json.Marshal(response)
-	if err != nil {
-		c.sendError("Failed to marshal response", err)
-		return
-	}
-
-	c.send <- responseBytes
-}
-
-// Helper method to send error response
-func (c *Client) sendError(message string, err error) {
-	log.Printf("%s: %v", message, err)
-
-	response := struct {
-		Type    string `json:"type"`
-		Action  string `json:"action"`
-		Success bool   `json:"success"`
-		Error   string `json:"error"`
-	}{
-		Type:    "error",
-		Action:  "project",
-		Success: false,
-		Error:   fmt.Sprintf("%s: %v", message, err),
-	}
-
-	responseBytes, err := json.Marshal(response)
-	if err != nil {
-		log.Printf("Failed to marshal error response: %v", err)
-		return
-	}
-
-	c.send <- responseBytes
 }

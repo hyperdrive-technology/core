@@ -9,6 +9,12 @@ export interface FileNode {
   isFolder: boolean;
   children?: FileNode[];
   content?: string;
+  nodeType?: 'heading' | 'controller' | 'file' | 'folder';
+  metadata?: {
+    ip?: string;
+    version?: string;
+    [key: string]: any;
+  };
 }
 
 // Server function to load example projects
@@ -37,15 +43,22 @@ async function scanDirectory(
         const entryPath = path.join(dirPath, entry);
         const stats = fs.statSync(entryPath);
         const uniqueId = `${baseName}-${entry}-${id++}`;
+        const lowerName = entry.toLowerCase();
+        const parentFolderName = path.basename(dirPath).toLowerCase();
 
         if (stats.isDirectory()) {
           // Recursively scan subdirectories
           const children = await scanDirectory(entryPath, uniqueId);
+
+          // Check if this is one of our special heading folders
+          const isHeading = ['devices', 'logic', 'control'].includes(lowerName);
+
           return {
             id: uniqueId,
             name: entry,
             isFolder: true,
             children,
+            nodeType: isHeading ? 'heading' : 'folder',
           };
         } else {
           // Read file content
@@ -63,11 +76,43 @@ async function scanDirectory(
             console.error(`Error reading file ${entryPath}:`, e);
           }
 
+          // Determine the node type based on the file extension and parent directory
+          let nodeType: 'controller' | 'file' = 'file';
+          let metadata = undefined;
+
+          // Check if this is a controller file (JSON file in the devices directory)
+          if (parentFolderName === 'devices' && lowerName.endsWith('.json')) {
+            nodeType = 'controller';
+            // Try to parse content as JSON to extract metadata
+            if (content) {
+              try {
+                const data = JSON.parse(content);
+                metadata = {
+                  ip: data.ip || '127.0.0.1',
+                  version: data.version || '1.0.0',
+                  description: data.description || 'Controller',
+                };
+                console.log(
+                  `Loaded controller: ${entry} with IP ${metadata.ip}`,
+                );
+              } catch (e) {
+                console.error(`Error parsing controller JSON ${entryPath}:`, e);
+                // Default metadata if parsing fails
+                metadata = {
+                  ip: '127.0.0.1',
+                  version: '1.0.0',
+                };
+              }
+            }
+          }
+
           return {
             id: uniqueId,
             name: entry,
             isFolder: false,
             content,
+            nodeType,
+            metadata,
           };
         }
       }),

@@ -35,13 +35,13 @@ const mainItems = [
     icon: Home,
   },
   {
-    title: 'Editor',
-    url: '/editor',
+    title: 'Logic',
+    url: '/logic',
     icon: Code,
   },
   {
-    title: 'Logic',
-    url: '/logic',
+    title: 'Control',
+    url: '/control',
     icon: LayoutDashboard,
   },
 ];

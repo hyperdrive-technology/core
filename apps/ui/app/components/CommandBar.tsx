@@ -1,47 +1,26 @@
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, Plug, Power, Upload } from 'lucide-react';
+import { Plug, Power, Upload } from 'lucide-react';
 
-interface CommandBarProps {
+export interface CommandBarProps {
   projectName: string;
-  onNavigateBack: () => void;
-  onNavigateForward: () => void;
   onDeploy: () => void;
   onToggleConnection: () => void;
   isConnected: boolean;
-  hasUnsavedChanges?: boolean;
+  hasUnsavedChanges: boolean;
+  isDeploying?: boolean;
 }
 
-export function CommandBar({
+export const CommandBar = ({
   projectName,
-  onNavigateBack,
-  onNavigateForward,
   onDeploy,
   onToggleConnection,
   isConnected,
-  hasUnsavedChanges = false,
-}: CommandBarProps) {
+  hasUnsavedChanges,
+  isDeploying = false,
+}: CommandBarProps) => {
   return (
     <div className="flex items-center justify-between p-2 border-b dark:border-gray-700  dark:bg-gray-900">
-      {/* Left side - Navigation buttons */}
-      <div className="flex items-center">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onNavigateBack}
-          title="Navigate Back (Alt+Left)"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onNavigateForward}
-          title="Navigate Forward (Alt+Right)"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-
+      <div />
       {/* Center - Project name */}
       <div className="font-semibold text-center flex items-center justify-center">
         {projectName}
@@ -59,6 +38,7 @@ export function CommandBar({
           variant="outline"
           size="sm"
           onClick={onDeploy}
+          disabled={!isConnected}
           title="Deploy to Runtime (Ctrl+Shift+D)"
           className="flex items-center"
         >
@@ -87,4 +67,4 @@ export function CommandBar({
       </div>
     </div>
   );
-}
+};

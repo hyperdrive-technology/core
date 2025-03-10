@@ -124,7 +124,7 @@ function HomePage() {
   // Navigate to editor with the selected example project
   const handleOpenExampleProject = (project: FileNode) => {
     navigate({
-      to: '/editor',
+      to: '/logic',
       search: {
         projectId: project.id,
         projectName: project.name,
@@ -180,18 +180,18 @@ function HomePage() {
           </div>
           <div className="flex items-center space-x-4">
             <Link
-              to="/editor"
-              className="flex items-center space-x-2 px-3 py-2 rounded-md hover:bg-accent"
-            >
-              <Code className="h-4 w-4" />
-              <span>Editor</span>
-            </Link>
-            <Link
               to="/logic"
               className="flex items-center space-x-2 px-3 py-2 rounded-md hover:bg-accent"
             >
-              <LayoutDashboard className="h-4 w-4" />
+              <Code className="h-4 w-4" />
               <span>Logic</span>
+            </Link>
+            <Link
+              to="/control"
+              className="flex items-center space-x-2 px-3 py-2 rounded-md hover:bg-accent"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Control</span>
             </Link>
           </div>
         </div>
@@ -279,7 +279,7 @@ function HomePage() {
                               <Button
                                 variant="ghost"
                                 className="flex items-center justify-start px-4 py-2 hover:bg-muted"
-                                onClick={() => navigate({ to: `/editor` })}
+                                onClick={() => navigate({ to: `/logic` })}
                               >
                                 Open
                               </Button>

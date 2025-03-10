@@ -1,18 +1,24 @@
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import Editor, { Monaco, OnMount } from '@monaco-editor/react';
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
+  Code,
   File,
   FilePlus,
   Folder,
   FolderOpen,
   FolderPlus,
+  Layout,
+  Server,
   X,
 } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { Resizable } from 're-resizable';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import {
   IEC61131_LANGUAGE_ID,
   registerIEC61131Language,
@@ -21,6 +27,7 @@ import { CommandBar } from './CommandBar';
 import ConfirmationDialog from './ConfirmationDialog';
 import ContextMenu from './ContextMenu';
 import NewFileDialog from './NewFileDialog';
+import VariableMonitor from './VariableMonitor';
 
 // Define the file tree data structure
 interface FileNode {
@@ -29,6 +36,13 @@ interface FileNode {
   isFolder: boolean;
   children?: FileNode[];
   content?: string;
+  nodeType?: 'heading' | 'controller' | 'file' | 'folder';
+  metadata?: {
+    ip?: string;
+    version?: string;
+    description?: string;
+    [key: string]: any;
+  };
 }
 
 // Tree Node Component
@@ -39,7 +53,9 @@ const TreeNode: React.FC<{
   selectedFileId: string | null;
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
 }> = ({ node, level, onSelectFile, selectedFileId, onContextMenu }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(
+    node.nodeType === 'heading' ? true : false,
+  );
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -50,7 +66,7 @@ const TreeNode: React.FC<{
 
   const handleSelect = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!node.isFolder) {
+    if (!node.isFolder || node.nodeType === 'controller') {
       onSelectFile(node);
     } else {
       // For folders, toggle expansion when clicked
@@ -64,19 +80,36 @@ const TreeNode: React.FC<{
     onContextMenu(e, node);
   };
 
+  // Helper function to get the appropriate icon for heading nodes
+  const getHeadingIcon = () => {
+    switch (node.name) {
+      case 'Devices':
+        return <Server className="h-4 w-4 text-zinc-400" />;
+      case 'Logic':
+        return <Code className="h-4 w-4 text-zinc-400" />;
+      case 'Control':
+        return <Layout className="h-4 w-4 text-zinc-400" />;
+      default:
+        return <Folder className="h-4 w-4 text-blue-600" />;
+    }
+  };
+
   return (
     <div>
       <div
         className={`flex items-center p-1 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 ${
           selectedFileId === node.id ? 'bg-gray-200 dark:bg-gray-700' : ''
-        }`}
-        style={{ paddingLeft: `${level * 12 + 4}px` }}
+        } ${node.nodeType === 'heading' ? 'font-bold text-sm border-b border-gray-300 dark:border-gray-600' : ''}`}
+        style={{
+          paddingLeft:
+            node.nodeType === 'heading' ? '4px' : `${level * 12 + 4}px`,
+        }}
         onClick={handleSelect}
         onContextMenu={handleContextMenu}
-        data-node-type={node.isFolder ? 'folder' : 'file'}
+        data-node-type={node.nodeType || (node.isFolder ? 'folder' : 'file')}
         data-node-id={node.id}
       >
-        {node.isFolder && (
+        {node.isFolder && node.nodeType !== 'heading' && (
           <span className="flex items-center">
             <span className="mr-1 cursor-pointer" onClick={handleToggle}>
               {isOpen ? (
@@ -94,12 +127,34 @@ const TreeNode: React.FC<{
             </span>
           </span>
         )}
-        {!node.isFolder && (
+        {node.nodeType === 'heading' && (
+          <span className="flex items-center">
+            <span className="mr-1 cursor-pointer" onClick={handleToggle}>
+              {isOpen ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </span>
+            <span className="mr-1">{getHeadingIcon()}</span>
+          </span>
+        )}
+        {node.nodeType === 'controller' && (
+          <span className="ml-5 mr-2">
+            <div className="h-2 w-2 rounded-full bg-green-500" title="Online" />
+          </span>
+        )}
+        {!node.isFolder && node.nodeType !== 'controller' && (
           <span className="ml-5 mr-1">
             <File className="h-4 w-4 text-blue-500" />
           </span>
         )}
         <span className="truncate">{node.name}</span>
+        {node.nodeType === 'controller' && node.metadata && (
+          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+            ({node.metadata.ip}, v{node.metadata.version})
+          </span>
+        )}
       </div>
       {node.isFolder && isOpen && node.children && (
         <div>
@@ -107,7 +162,7 @@ const TreeNode: React.FC<{
             <TreeNode
               key={child.id}
               node={child}
-              level={level + 1}
+              level={node.nodeType === 'heading' ? 0 : level + 1}
               onSelectFile={onSelectFile}
               selectedFileId={selectedFileId}
               onContextMenu={onContextMenu}
@@ -126,7 +181,17 @@ const FileExplorer: React.FC<{
   selectedFileId: string | null;
   onAddFile: (parentNode: FileNode | null, isFolder: boolean) => void;
   onDeleteFile: (node: FileNode) => void;
-}> = ({ files, onSelectFile, selectedFileId, onAddFile, onDeleteFile }) => {
+  onDeploy: (node: FileNode) => void;
+  onAddController?: () => void;
+}> = ({
+  files,
+  onSelectFile,
+  selectedFileId,
+  onAddFile,
+  onDeleteFile,
+  onDeploy,
+  onAddController,
+}) => {
   const [contextMenu, setContextMenu] = useState({
     show: false,
     node: null as FileNode | null,
@@ -186,8 +251,18 @@ const FileExplorer: React.FC<{
             >
               <FolderPlus className="h-4 w-4" />
             </button>
+            {onAddController && (
+              <button
+                onClick={onAddController}
+                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
+                title="Add new controller"
+              >
+                <Server className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
+
         <div
           className="overflow-auto h-[calc(100%-6rem)]"
           onContextMenu={handleBackgroundContextMenu}
@@ -209,10 +284,17 @@ const FileExplorer: React.FC<{
       <ContextMenu
         show={contextMenu.show}
         node={contextMenu.node}
-        type={contextMenu.type}
+        type={
+          contextMenu.node?.nodeType === 'controller'
+            ? 'controller'
+            : contextMenu.node?.isFolder
+              ? 'folder'
+              : 'file'
+        }
         onAddFile={onAddFile}
         onDelete={onDeleteFile}
         onClose={closeContextMenu}
+        onDeploy={onDeploy}
       >
         <></>
       </ContextMenu>
@@ -270,7 +352,94 @@ interface MonacoEditorProps {
 const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
-  const [files, setFiles] = useState<FileNode[]>(initialFiles ?? []);
+  const [files, setFiles] = useState<FileNode[]>(
+    initialFiles ?? [
+      {
+        id: 'devices-section',
+        name: 'Devices',
+        isFolder: true,
+        nodeType: 'heading',
+        children: [
+          {
+            id: 'controller-1',
+            name: 'Controller1',
+            isFolder: false,
+            nodeType: 'controller',
+            content: JSON.stringify(
+              {
+                name: 'Controller1',
+                ip: '192.168.1.100',
+                version: '1.0.0',
+                status: 'online',
+                description: 'Main PLC controller for production line',
+              },
+              null,
+              2,
+            ),
+            metadata: {
+              ip: '192.168.1.100',
+              version: '1.0.0',
+              description: 'Main PLC controller for production line',
+            },
+          },
+        ],
+      },
+      {
+        id: 'logic-section',
+        name: 'Logic',
+        isFolder: true,
+        nodeType: 'heading',
+        children: [
+          {
+            id: 'main-program',
+            name: 'Main.st',
+            isFolder: false,
+            content: `PROGRAM Main
+VAR
+  Counter : INT := 0;
+  MaxValue : INT := 100;
+END_VAR
+
+Counter := Counter + 1;
+IF Counter >= MaxValue THEN
+  Counter := 0;
+END_IF`,
+            nodeType: 'file',
+          },
+        ],
+      },
+      {
+        id: 'control-section',
+        name: 'Control',
+        isFolder: true,
+        nodeType: 'heading',
+        children: [
+          {
+            id: 'dashboard',
+            name: 'Dashboard.tsx',
+            isFolder: false,
+            content: `import React from 'react';
+import { Card, Button } from './components';
+
+export default function Dashboard() {
+  return (
+    <div className="p-4">
+      <h1 className="text-2xl font-bold mb-4">Controller Dashboard</h1>
+      <Card className="p-4">
+        <h2 className="text-lg font-medium">Status: Online</h2>
+        <div className="mt-2">
+          <Button>Refresh</Button>
+        </div>
+      </Card>
+    </div>
+  );
+}`,
+            nodeType: 'file',
+          },
+        ],
+      },
+    ],
+  );
   const [openFiles, setOpenFiles] = useState<FileNode[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [editorReady, setEditorReady] = useState(false);
@@ -298,7 +467,9 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
 
   // Add a state for tracking the current project/folder
-  const [activeProject, setActiveProject] = useState<string | null>(null);
+  const [currentProjectName, setCurrentProjectName] = useState<string | null>(
+    null,
+  );
 
   // Auto-open the first file from initialFiles if provided
   useEffect(() => {
@@ -606,7 +777,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         // Create a custom formatter function
         const formatSTDocument = () => {
           const model = ed.getModel();
-          if (!model || model.getLanguageId() !== 'iec61131') return;
+          if (!model || model.getLanguageId() !== 'iec-61131') return;
 
           const lineCount = model.getLineCount();
           const edits = [];
@@ -793,7 +964,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
     editor.onDidChangeModel(() => {
       setTimeout(() => {
         const model = editor.getModel();
-        if (model && model.getLanguageId() === 'iec61131') {
+        if (model && model.getLanguageId() === 'iec-61131') {
           formatButton.style.display = 'block';
         } else {
           formatButton.style.display = 'none';
@@ -1101,7 +1272,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
 
         // Find the project name for this file
         const projectName = findProjectForFile(files, node.id);
-        setActiveProject(projectName);
+        setCurrentProjectName(projectName);
 
         // Check if file is already open
         const isFileOpen = openFiles.some((file) => file.id === node.id);
@@ -1217,16 +1388,28 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
     }
   }, [activeFileId, editorRef, unsavedFileIds]);
 
-  // Modified deploy function to save before deploying
-  const handleDeploy = useCallback(() => {
-    // Save any unsaved changes first
-    if (hasUnsavedChanges) {
-      handleSaveFile();
-    }
+  // Handle deploying to a specific controller
+  const handleDeployToController = (node: FileNode) => {
+    if (node.nodeType === 'controller' && node.metadata?.ip) {
+      setIsDeploying(true);
+      // In a real implementation, this would deploy the code to the specific controller
+      toast.info(
+        `Deploying to controller ${node.name} at ${node.metadata.ip}`,
+        {
+          description:
+            'This is a placeholder for the actual deployment functionality',
+        },
+      );
 
-    // Now deploy the saved code
-    alert('Deploying code to runtime (placeholder)');
-  }, [hasUnsavedChanges, handleSaveFile]);
+      // Simulate API call
+      setTimeout(() => {
+        toast.success('Deployment successful', {
+          description: `Code deployed to ${node.name}`,
+        });
+        setIsDeploying(false);
+      }, 2000);
+    }
+  };
 
   // Toggle connection to runtime
   const handleToggleConnection = useCallback(() => {
@@ -1361,9 +1544,132 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
     });
   };
 
+  // Handle adding a new controller to Devices section
+  const handleAddController = () => {
+    // Open a dialog to get controller details
+    const controllerName = prompt('Enter controller name:');
+    if (!controllerName) return;
+
+    const controllerIp = prompt(
+      'Enter controller IP address:',
+      '192.168.1.100',
+    );
+    if (!controllerIp) return;
+
+    // Find the Devices section
+    const devicesSection = files.find((node) => node.id === 'devices-section');
+    if (!devicesSection) return;
+
+    // Create a new controller node
+    const newController: FileNode = {
+      id: generateId(),
+      name: controllerName,
+      isFolder: false,
+      nodeType: 'controller',
+      content: JSON.stringify(
+        {
+          name: controllerName,
+          ip: controllerIp,
+          version: '1.0.0',
+          status: 'online',
+          description: 'Main PLC controller for production line',
+        },
+        null,
+        2,
+      ),
+      metadata: {
+        ip: controllerIp,
+        version: '1.0.0',
+        description: 'Main PLC controller for production line',
+      },
+    };
+
+    // Update the files state to add the new controller to the Devices section
+    setFiles((prevFiles) => {
+      return prevFiles.map((node) => {
+        if (node.id === 'devices-section') {
+          return {
+            ...node,
+            children: [...(node.children || []), newController],
+          };
+        }
+        return node;
+      });
+    });
+
+    // Select the new controller to show its content
+    handleSelectFile(newController);
+  };
+
   // Create new file or folder
   const createNewFileOrFolder = (name: string) => {
     const { parentNode, isFolder } = fileDialog;
+
+    // If parent is a heading node, check if it's the Devices section
+    if (
+      parentNode?.nodeType === 'heading' &&
+      parentNode.id === 'devices-section'
+    ) {
+      // For the Devices section, we might want to create a controller instead of a regular file
+      // Here we could prompt the user to choose, but for simplicity,
+      // let's check if the name has "controller" in it to decide
+      if (name.toLowerCase().includes('controller')) {
+        // Close dialog first
+        setFileDialog({
+          isOpen: false,
+          isFolder: false,
+          parentNode: null,
+        });
+
+        // Create a controller with a default IP
+        const controllerIp = prompt(
+          'Enter controller IP address:',
+          '192.168.1.100',
+        );
+        if (!controllerIp) return;
+
+        // Create a new controller node
+        const newController: FileNode = {
+          id: generateId(),
+          name,
+          isFolder: false,
+          nodeType: 'controller',
+          content: JSON.stringify(
+            {
+              name,
+              ip: controllerIp,
+              version: '1.0.0',
+              status: 'online',
+              description: 'Main PLC controller for production line',
+            },
+            null,
+            2,
+          ),
+          metadata: {
+            ip: controllerIp,
+            version: '1.0.0',
+            description: 'Main PLC controller for production line',
+          },
+        };
+
+        // Update the files state to add the new controller to the Devices section
+        setFiles((prevFiles) => {
+          return prevFiles.map((node) => {
+            if (node.id === 'devices-section') {
+              return {
+                ...node,
+                children: [...(node.children || []), newController],
+              };
+            }
+            return node;
+          });
+        });
+
+        // Select the new controller to show its content
+        handleSelectFile(newController);
+        return;
+      }
+    }
 
     // Create new node
     const newNode: FileNode = {
@@ -1372,6 +1678,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
       isFolder,
       content: isFolder ? undefined : '',
       children: isFolder ? [] : undefined,
+      nodeType: isFolder ? 'folder' : 'file',
     };
 
     // If parent node is provided, add as child
@@ -1508,13 +1815,21 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
       // Ctrl+Shift+D or Cmd+Shift+D to deploy
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'd') {
         e.preventDefault();
-        handleDeploy();
+        if (activeFile) {
+          handleDeployToController(activeFile);
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSaveFile, handleNavigateBack, handleNavigateForward, handleDeploy]);
+  }, [
+    handleSaveFile,
+    handleNavigateBack,
+    handleNavigateForward,
+    handleDeployToController,
+    activeFile,
+  ]);
 
   // Helper function to format project name
   const formatProjectName = (name: string | null): string => {
@@ -1528,16 +1843,120 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
       .join(' ');
   };
 
+  // Get the AST for the current file
+  const getAst = useCallback(() => {
+    if (!editorRef.current || !monacoRef.current || !activeFile) {
+      return null;
+    }
+
+    // Try to get the langium services
+    try {
+      const model = editorRef.current.getModel();
+      if (!model || model.getLanguageId() !== IEC61131_LANGUAGE_ID) {
+        console.error('Not an IEC-61131 file');
+        return null;
+      }
+
+      // Get the document content
+      const content = model.getValue();
+
+      // For simplicity, create a basic AST representing the code structure
+      // This is a placeholder - in a real implementation, you would use
+      // Langium's parsing capabilities to generate a proper AST
+      const ast: any = {
+        type: 'Program',
+        name: activeFile.name.replace(/\.st$/, ''),
+        statements: [],
+        declarations: [] as Array<{
+          type: string;
+          name: string;
+          dataType: string;
+          initialValue?: string;
+        }>,
+        content: content,
+      };
+
+      // Extract variable declarations using regular expressions
+      // This is a very simplified approach - in a real implementation, use proper parsing
+      const varRegex =
+        /VAR(?:_INPUT|_OUTPUT|_EXTERNAL|_IN_OUT)?\s+(.*?)END_VAR/gs;
+      let varMatch;
+      while ((varMatch = varRegex.exec(content)) !== null) {
+        const varBlockContent = varMatch[1];
+        const varLineRegex = /(\w+)\s*:\s*(\w+)\s*(?::\=\s*([^;]+))?;/g;
+        let varLineMatch;
+        while ((varLineMatch = varLineRegex.exec(varBlockContent)) !== null) {
+          const varName = varLineMatch[1];
+          const varType = varLineMatch[2];
+          const varInitValue = varLineMatch[3];
+
+          ast.declarations.push({
+            type: 'VariableDeclaration',
+            name: varName,
+            dataType: varType,
+            initialValue: varInitValue,
+          });
+        }
+      }
+
+      return JSON.stringify(ast);
+    } catch (error) {
+      console.error('Error getting AST:', error);
+      return null;
+    }
+  }, [activeFile]);
+
+  // New state for deploying
+  const [isDeploying, setIsDeploying] = useState(false);
+
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex flex-col h-full">
       <CommandBar
-        projectName={formatProjectName(activeProject)}
-        onNavigateBack={handleNavigateBack}
-        onNavigateForward={handleNavigateForward}
-        onDeploy={handleDeploy}
+        projectName={formatProjectName(currentProjectName)}
+        onDeploy={() => {
+          // Get the AST and deploy the code
+          if (activeFile) {
+            const ast = getAst();
+            if (ast) {
+              setIsDeploying(true);
+              fetch('http://localhost:3000/api/deploy', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  ast: ast,
+                  sourceCode: activeFile.content || '',
+                  filePath: activeFile.id,
+                }),
+              })
+                .then((response) => {
+                  if (!response.ok) {
+                    throw new Error('Deployment failed');
+                  }
+                  return response.json();
+                })
+                .then(() => {
+                  toast.success('Deployment successful', {
+                    description: `Code deployed to ${activeFile.id}`,
+                  });
+                })
+                .catch((error) => {
+                  console.error('Deployment error:', error);
+                  toast.error('Deployment failed', {
+                    description: error.message || 'Unknown error',
+                  });
+                })
+                .finally(() => {
+                  setIsDeploying(false);
+                });
+            }
+          }
+        }}
         onToggleConnection={handleToggleConnection}
         isConnected={connected}
         hasUnsavedChanges={hasUnsavedChanges}
+        isDeploying={isDeploying}
       />
       <div className="h-full flex">
         <Resizable
@@ -1553,11 +1972,33 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
             selectedFileId={activeFileId}
             onAddFile={handleAddFile}
             onDeleteFile={handleDeleteFile}
+            onDeploy={handleDeployToController}
+            onAddController={handleAddController}
           />
         </Resizable>
 
         <div className="flex-1 flex flex-col">
-          <div className="flex overflow-x-auto border-b dark:border-gray-700">
+          <div className="flex items-center border-b overflow-x-auto">
+            <div className="flex items-center px-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={handleNavigateBack}
+                title="Navigate Back"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={handleNavigateForward}
+                title="Navigate Forward"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
             {openFiles.map((file) => (
               <EditorTab
                 key={file.id}
@@ -1604,6 +2045,10 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteDialog({ isOpen: false, node: null })}
       />
+
+      <div className="mt-4">
+        <VariableMonitor className="w-full" />
+      </div>
     </div>
   );
 };

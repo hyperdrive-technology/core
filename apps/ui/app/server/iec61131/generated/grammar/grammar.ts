@@ -3660,37 +3660,8 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
       "$type": "ParserRule",
       "name": "Expression",
       "definition": {
-        "$type": "RuleCall",
-        "rule": {
-          "$ref": "#/rules@159"
-        },
-        "arguments": []
-      },
-      "definesHiddenTokens": false,
-      "entry": false,
-      "fragment": false,
-      "hiddenTokens": [],
-      "parameters": [],
-      "wildcard": false
-    },
-    {
-      "$type": "ParserRule",
-      "name": "OrExpression",
-      "definition": {
-        "$type": "Group",
+        "$type": "Alternatives",
         "elements": [
-          {
-            "$type": "Assignment",
-            "feature": "left",
-            "operator": "=",
-            "terminal": {
-              "$type": "RuleCall",
-              "rule": {
-                "$ref": "#/rules@160"
-              },
-              "arguments": []
-            }
-          },
           {
             "$type": "Group",
             "elements": [
@@ -3699,37 +3670,23 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
                 "inferredType": {
                   "$type": "InferredType",
                   "name": "BinaryExpression"
-                },
-                "feature": "left",
-                "operator": "="
-              },
-              {
-                "$type": "Assignment",
-                "feature": "operator",
-                "operator": "=",
-                "terminal": {
-                  "$type": "Alternatives",
-                  "elements": [
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@74"
-                      },
-                      "arguments": []
-                    },
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@75"
-                      },
-                      "arguments": []
-                    }
-                  ]
                 }
               },
               {
                 "$type": "Assignment",
-                "feature": "right",
+                "feature": "left",
+                "operator": "=",
+                "terminal": {
+                  "$type": "RuleCall",
+                  "rule": {
+                    "$ref": "#/rules@159"
+                  },
+                  "arguments": []
+                }
+              },
+              {
+                "$type": "Assignment",
+                "feature": "operator",
                 "operator": "=",
                 "terminal": {
                   "$type": "RuleCall",
@@ -3738,36 +3695,20 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
                   },
                   "arguments": []
                 }
-              }
-            ],
-            "cardinality": "*"
-          }
-        ]
-      },
-      "definesHiddenTokens": false,
-      "entry": false,
-      "fragment": false,
-      "hiddenTokens": [],
-      "parameters": [],
-      "wildcard": false
-    },
-    {
-      "$type": "ParserRule",
-      "name": "AndExpression",
-      "definition": {
-        "$type": "Group",
-        "elements": [
-          {
-            "$type": "Assignment",
-            "feature": "left",
-            "operator": "=",
-            "terminal": {
-              "$type": "RuleCall",
-              "rule": {
-                "$ref": "#/rules@161"
               },
-              "arguments": []
-            }
+              {
+                "$type": "Assignment",
+                "feature": "right",
+                "operator": "=",
+                "terminal": {
+                  "$type": "RuleCall",
+                  "rule": {
+                    "$ref": "#/rules@158"
+                  },
+                  "arguments": []
+                }
+              }
+            ]
           },
           {
             "$type": "Group",
@@ -3776,26 +3717,12 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
                 "$type": "Action",
                 "inferredType": {
                   "$type": "InferredType",
-                  "name": "BinaryExpression"
-                },
-                "feature": "left",
-                "operator": "="
-              },
-              {
-                "$type": "Assignment",
-                "feature": "operator",
-                "operator": "=",
-                "terminal": {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@73"
-                  },
-                  "arguments": []
+                  "name": "UnaryExpression"
                 }
               },
               {
                 "$type": "Assignment",
-                "feature": "right",
+                "feature": "operator",
                 "operator": "=",
                 "terminal": {
                   "$type": "RuleCall",
@@ -3804,342 +3731,27 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
                   },
                   "arguments": []
                 }
-              }
-            ],
-            "cardinality": "*"
-          }
-        ]
-      },
-      "definesHiddenTokens": false,
-      "entry": false,
-      "fragment": false,
-      "hiddenTokens": [],
-      "parameters": [],
-      "wildcard": false
-    },
-    {
-      "$type": "ParserRule",
-      "name": "EqualityExpression",
-      "definition": {
-        "$type": "Group",
-        "elements": [
-          {
-            "$type": "Assignment",
-            "feature": "left",
-            "operator": "=",
-            "terminal": {
-              "$type": "RuleCall",
-              "rule": {
-                "$ref": "#/rules@162"
-              },
-              "arguments": []
-            }
-          },
-          {
-            "$type": "Group",
-            "elements": [
-              {
-                "$type": "Action",
-                "inferredType": {
-                  "$type": "InferredType",
-                  "name": "BinaryExpression"
-                },
-                "feature": "left",
-                "operator": "="
               },
               {
                 "$type": "Assignment",
-                "feature": "operator",
-                "operator": "=",
-                "terminal": {
-                  "$type": "Alternatives",
-                  "elements": [
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@116"
-                      },
-                      "arguments": []
-                    },
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@112"
-                      },
-                      "arguments": []
-                    }
-                  ]
-                }
-              },
-              {
-                "$type": "Assignment",
-                "feature": "right",
+                "feature": "operand",
                 "operator": "=",
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@162"
+                    "$ref": "#/rules@159"
                   },
                   "arguments": []
                 }
               }
-            ],
-            "cardinality": "*"
-          }
-        ]
-      },
-      "definesHiddenTokens": false,
-      "entry": false,
-      "fragment": false,
-      "hiddenTokens": [],
-      "parameters": [],
-      "wildcard": false
-    },
-    {
-      "$type": "ParserRule",
-      "name": "RelationalExpression",
-      "definition": {
-        "$type": "Group",
-        "elements": [
-          {
-            "$type": "Assignment",
-            "feature": "left",
-            "operator": "=",
-            "terminal": {
-              "$type": "RuleCall",
-              "rule": {
-                "$ref": "#/rules@163"
-              },
-              "arguments": []
-            }
+            ]
           },
           {
-            "$type": "Group",
-            "elements": [
-              {
-                "$type": "Action",
-                "inferredType": {
-                  "$type": "InferredType",
-                  "name": "BinaryExpression"
-                },
-                "feature": "left",
-                "operator": "="
-              },
-              {
-                "$type": "Assignment",
-                "feature": "operator",
-                "operator": "=",
-                "terminal": {
-                  "$type": "Alternatives",
-                  "elements": [
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@117"
-                      },
-                      "arguments": []
-                    },
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@110"
-                      },
-                      "arguments": []
-                    },
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@118"
-                      },
-                      "arguments": []
-                    },
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@111"
-                      },
-                      "arguments": []
-                    }
-                  ]
-                }
-              },
-              {
-                "$type": "Assignment",
-                "feature": "right",
-                "operator": "=",
-                "terminal": {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@163"
-                  },
-                  "arguments": []
-                }
-              }
-            ],
-            "cardinality": "*"
-          }
-        ]
-      },
-      "definesHiddenTokens": false,
-      "entry": false,
-      "fragment": false,
-      "hiddenTokens": [],
-      "parameters": [],
-      "wildcard": false
-    },
-    {
-      "$type": "ParserRule",
-      "name": "AdditiveExpression",
-      "definition": {
-        "$type": "Group",
-        "elements": [
-          {
-            "$type": "Assignment",
-            "feature": "left",
-            "operator": "=",
-            "terminal": {
-              "$type": "RuleCall",
-              "rule": {
-                "$ref": "#/rules@164"
-              },
-              "arguments": []
-            }
-          },
-          {
-            "$type": "Group",
-            "elements": [
-              {
-                "$type": "Action",
-                "inferredType": {
-                  "$type": "InferredType",
-                  "name": "BinaryExpression"
-                },
-                "feature": "left",
-                "operator": "="
-              },
-              {
-                "$type": "Assignment",
-                "feature": "operator",
-                "operator": "=",
-                "terminal": {
-                  "$type": "Alternatives",
-                  "elements": [
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@119"
-                      },
-                      "arguments": []
-                    },
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@120"
-                      },
-                      "arguments": []
-                    }
-                  ]
-                }
-              },
-              {
-                "$type": "Assignment",
-                "feature": "right",
-                "operator": "=",
-                "terminal": {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@164"
-                  },
-                  "arguments": []
-                }
-              }
-            ],
-            "cardinality": "*"
-          }
-        ]
-      },
-      "definesHiddenTokens": false,
-      "entry": false,
-      "fragment": false,
-      "hiddenTokens": [],
-      "parameters": [],
-      "wildcard": false
-    },
-    {
-      "$type": "ParserRule",
-      "name": "MultiplicativeExpression",
-      "definition": {
-        "$type": "Group",
-        "elements": [
-          {
-            "$type": "Assignment",
-            "feature": "left",
-            "operator": "=",
-            "terminal": {
-              "$type": "RuleCall",
-              "rule": {
-                "$ref": "#/rules@165"
-              },
-              "arguments": []
-            }
-          },
-          {
-            "$type": "Group",
-            "elements": [
-              {
-                "$type": "Action",
-                "inferredType": {
-                  "$type": "InferredType",
-                  "name": "BinaryExpression"
-                },
-                "feature": "left",
-                "operator": "="
-              },
-              {
-                "$type": "Assignment",
-                "feature": "operator",
-                "operator": "=",
-                "terminal": {
-                  "$type": "Alternatives",
-                  "elements": [
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@121"
-                      },
-                      "arguments": []
-                    },
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@122"
-                      },
-                      "arguments": []
-                    },
-                    {
-                      "$type": "RuleCall",
-                      "rule": {
-                        "$ref": "#/rules@77"
-                      },
-                      "arguments": []
-                    }
-                  ]
-                }
-              },
-              {
-                "$type": "Assignment",
-                "feature": "right",
-                "operator": "=",
-                "terminal": {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@165"
-                  },
-                  "arguments": []
-                }
-              }
-            ],
-            "cardinality": "*"
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@159"
+            },
+            "arguments": []
           }
         ]
       },
@@ -4160,6 +3772,13 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
             "$type": "Group",
             "elements": [
               {
+                "$type": "Action",
+                "inferredType": {
+                  "$type": "InferredType",
+                  "name": "ParenExpression"
+                }
+              },
+              {
                 "$type": "RuleCall",
                 "rule": {
                   "$ref": "#/rules@127"
@@ -4167,11 +3786,16 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
                 "arguments": []
               },
               {
-                "$type": "RuleCall",
-                "rule": {
-                  "$ref": "#/rules@158"
-                },
-                "arguments": []
+                "$type": "Assignment",
+                "feature": "expr",
+                "operator": "=",
+                "terminal": {
+                  "$type": "RuleCall",
+                  "rule": {
+                    "$ref": "#/rules@158"
+                  },
+                  "arguments": []
+                }
               },
               {
                 "$type": "RuleCall",
@@ -4189,29 +3813,95 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
                 "$type": "Action",
                 "inferredType": {
                   "$type": "InferredType",
-                  "name": "UnaryExpression"
+                  "name": "Literal"
                 }
               },
               {
                 "$type": "Assignment",
-                "feature": "operator",
+                "feature": "value",
                 "operator": "=",
                 "terminal": {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@76"
-                  },
-                  "arguments": []
+                  "$type": "Alternatives",
+                  "elements": [
+                    {
+                      "$type": "RuleCall",
+                      "rule": {
+                        "$ref": "#/rules@108"
+                      },
+                      "arguments": []
+                    },
+                    {
+                      "$type": "RuleCall",
+                      "rule": {
+                        "$ref": "#/rules@102"
+                      },
+                      "arguments": []
+                    },
+                    {
+                      "$type": "RuleCall",
+                      "rule": {
+                        "$ref": "#/rules@103"
+                      },
+                      "arguments": []
+                    },
+                    {
+                      "$type": "RuleCall",
+                      "rule": {
+                        "$ref": "#/rules@104"
+                      },
+                      "arguments": []
+                    },
+                    {
+                      "$type": "RuleCall",
+                      "rule": {
+                        "$ref": "#/rules@105"
+                      },
+                      "arguments": []
+                    },
+                    {
+                      "$type": "RuleCall",
+                      "rule": {
+                        "$ref": "#/rules@106"
+                      },
+                      "arguments": []
+                    },
+                    {
+                      "$type": "RuleCall",
+                      "rule": {
+                        "$ref": "#/rules@109"
+                      },
+                      "arguments": []
+                    },
+                    {
+                      "$type": "RuleCall",
+                      "rule": {
+                        "$ref": "#/rules@162"
+                      },
+                      "arguments": []
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "$type": "Group",
+            "elements": [
+              {
+                "$type": "Action",
+                "inferredType": {
+                  "$type": "InferredType",
+                  "name": "FunctionCallExpression"
                 }
               },
               {
                 "$type": "Assignment",
-                "feature": "operand",
+                "feature": "call",
                 "operator": "=",
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@165"
+                    "$ref": "#/rules@149"
                   },
                   "arguments": []
                 }
@@ -4225,53 +3915,159 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
                 "$type": "Action",
                 "inferredType": {
                   "$type": "InferredType",
-                  "name": "UnaryExpression"
+                  "name": "VariableReference"
                 }
               },
               {
                 "$type": "Assignment",
-                "feature": "operator",
-                "operator": "=",
+                "feature": "elements",
+                "operator": "+=",
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@120"
+                    "$ref": "#/rules@148"
                   },
                   "arguments": []
                 }
               },
               {
-                "$type": "Assignment",
-                "feature": "operand",
-                "operator": "=",
-                "terminal": {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@165"
+                "$type": "Group",
+                "elements": [
+                  {
+                    "$type": "RuleCall",
+                    "rule": {
+                      "$ref": "#/rules@123"
+                    },
+                    "arguments": []
                   },
-                  "arguments": []
-                }
+                  {
+                    "$type": "Assignment",
+                    "feature": "elements",
+                    "operator": "+=",
+                    "terminal": {
+                      "$type": "RuleCall",
+                      "rule": {
+                        "$ref": "#/rules@148"
+                      },
+                      "arguments": []
+                    }
+                  }
+                ],
+                "cardinality": "*"
               }
             ]
-          },
+          }
+        ]
+      },
+      "definesHiddenTokens": false,
+      "entry": false,
+      "fragment": false,
+      "hiddenTokens": [],
+      "parameters": [],
+      "wildcard": false
+    },
+    {
+      "$type": "ParserRule",
+      "name": "BinaryOperator",
+      "dataType": "string",
+      "definition": {
+        "$type": "Alternatives",
+        "elements": [
           {
             "$type": "RuleCall",
             "rule": {
-              "$ref": "#/rules@166"
+              "$ref": "#/rules@74"
             },
             "arguments": []
           },
           {
             "$type": "RuleCall",
             "rule": {
-              "$ref": "#/rules@169"
+              "$ref": "#/rules@75"
             },
             "arguments": []
           },
           {
             "$type": "RuleCall",
             "rule": {
-              "$ref": "#/rules@168"
+              "$ref": "#/rules@73"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@116"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@112"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@117"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@110"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@118"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@111"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@119"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@120"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@121"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@122"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@77"
             },
             "arguments": []
           }
@@ -4286,82 +4082,24 @@ export const IEC61131Grammar = (): Grammar => loadedIEC61131Grammar ?? (loadedIE
     },
     {
       "$type": "ParserRule",
-      "name": "Literal",
+      "name": "UnaryOperator",
+      "dataType": "string",
       "definition": {
-        "$type": "Group",
+        "$type": "Alternatives",
         "elements": [
           {
-            "$type": "Action",
-            "inferredType": {
-              "$type": "InferredType",
-              "name": "Literal"
-            }
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@76"
+            },
+            "arguments": []
           },
           {
-            "$type": "Assignment",
-            "feature": "value",
-            "operator": "=",
-            "terminal": {
-              "$type": "Alternatives",
-              "elements": [
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@108"
-                  },
-                  "arguments": []
-                },
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@102"
-                  },
-                  "arguments": []
-                },
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@103"
-                  },
-                  "arguments": []
-                },
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@104"
-                  },
-                  "arguments": []
-                },
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@105"
-                  },
-                  "arguments": []
-                },
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@106"
-                  },
-                  "arguments": []
-                },
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@109"
-                  },
-                  "arguments": []
-                },
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@167"
-                  },
-                  "arguments": []
-                }
-              ]
-            }
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@120"
+            },
+            "arguments": []
           }
         ]
       },

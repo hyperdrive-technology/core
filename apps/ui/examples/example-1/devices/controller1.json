@@ -1,0 +1,6 @@
+{
+  "name": "Controller1",
+  "ip": "192.168.1.100",
+  "version": "1.0.0",
+  "description": "Main PLC controller for production line"
+}
