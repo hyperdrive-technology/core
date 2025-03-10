@@ -1,20 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import Editor, { Monaco, OnMount } from '@monaco-editor/react';
-import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Code,
-  File,
-  FilePlus,
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  Layout,
-  Server,
-  X,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, File, X } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { Resizable } from 're-resizable';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -24,283 +11,10 @@ import {
   registerIEC61131Language,
 } from '../server/iec61131/language-service';
 import { CommandBar } from './CommandBar';
-import ConfirmationDialog from './ConfirmationDialog';
-import ContextMenu from './ContextMenu';
 import NewFileDialog from './NewFileDialog';
+import ProjectSidebar from './ProjectSidebar/ProjectSidebar';
 import VariableMonitor from './VariableMonitor';
-
-// Define the file tree data structure
-interface FileNode {
-  id: string;
-  name: string;
-  isFolder: boolean;
-  children?: FileNode[];
-  content?: string;
-  nodeType?: 'heading' | 'controller' | 'file' | 'folder';
-  metadata?: {
-    ip?: string;
-    version?: string;
-    description?: string;
-    [key: string]: any;
-  };
-}
-
-// Tree Node Component
-const TreeNode: React.FC<{
-  node: FileNode;
-  level: number;
-  onSelectFile: (node: FileNode) => void;
-  selectedFileId: string | null;
-  onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
-}> = ({ node, level, onSelectFile, selectedFileId, onContextMenu }) => {
-  const [isOpen, setIsOpen] = useState(
-    node.nodeType === 'heading' ? true : false,
-  );
-
-  const handleToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (node.isFolder) {
-      setIsOpen(!isOpen);
-    }
-  };
-
-  const handleSelect = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!node.isFolder || node.nodeType === 'controller') {
-      onSelectFile(node);
-    } else {
-      // For folders, toggle expansion when clicked
-      setIsOpen(!isOpen);
-    }
-  };
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onContextMenu(e, node);
-  };
-
-  // Helper function to get the appropriate icon for heading nodes
-  const getHeadingIcon = () => {
-    switch (node.name) {
-      case 'Devices':
-        return <Server className="h-4 w-4 text-zinc-400" />;
-      case 'Logic':
-        return <Code className="h-4 w-4 text-zinc-400" />;
-      case 'Control':
-        return <Layout className="h-4 w-4 text-zinc-400" />;
-      default:
-        return <Folder className="h-4 w-4 text-blue-600" />;
-    }
-  };
-
-  return (
-    <div>
-      <div
-        className={`flex items-center p-1 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 ${
-          selectedFileId === node.id ? 'bg-gray-200 dark:bg-gray-700' : ''
-        } ${node.nodeType === 'heading' ? 'font-bold text-sm border-b border-gray-300 dark:border-gray-600' : ''}`}
-        style={{
-          paddingLeft:
-            node.nodeType === 'heading' ? '4px' : `${level * 12 + 4}px`,
-        }}
-        onClick={handleSelect}
-        onContextMenu={handleContextMenu}
-        data-node-type={node.nodeType || (node.isFolder ? 'folder' : 'file')}
-        data-node-id={node.id}
-      >
-        {node.isFolder && node.nodeType !== 'heading' && (
-          <span className="flex items-center">
-            <span className="mr-1 cursor-pointer" onClick={handleToggle}>
-              {isOpen ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </span>
-            <span className="mr-1">
-              {isOpen ? (
-                <FolderOpen className="h-4 w-4 text-yellow-500" />
-              ) : (
-                <Folder className="h-4 w-4 text-yellow-500" />
-              )}
-            </span>
-          </span>
-        )}
-        {node.nodeType === 'heading' && (
-          <span className="flex items-center">
-            <span className="mr-1 cursor-pointer" onClick={handleToggle}>
-              {isOpen ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </span>
-            <span className="mr-1">{getHeadingIcon()}</span>
-          </span>
-        )}
-        {node.nodeType === 'controller' && (
-          <span className="ml-5 mr-2">
-            <div className="h-2 w-2 rounded-full bg-green-500" title="Online" />
-          </span>
-        )}
-        {!node.isFolder && node.nodeType !== 'controller' && (
-          <span className="ml-5 mr-1">
-            <File className="h-4 w-4 text-blue-500" />
-          </span>
-        )}
-        <span className="truncate">{node.name}</span>
-        {node.nodeType === 'controller' && node.metadata && (
-          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-            ({node.metadata.ip}, v{node.metadata.version})
-          </span>
-        )}
-      </div>
-      {node.isFolder && isOpen && node.children && (
-        <div>
-          {node.children.map((child) => (
-            <TreeNode
-              key={child.id}
-              node={child}
-              level={node.nodeType === 'heading' ? 0 : level + 1}
-              onSelectFile={onSelectFile}
-              selectedFileId={selectedFileId}
-              onContextMenu={onContextMenu}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// File Explorer Component
-const FileExplorer: React.FC<{
-  files: FileNode[];
-  onSelectFile: (node: FileNode) => void;
-  selectedFileId: string | null;
-  onAddFile: (parentNode: FileNode | null, isFolder: boolean) => void;
-  onDeleteFile: (node: FileNode) => void;
-  onDeploy: (node: FileNode) => void;
-  onAddController?: () => void;
-}> = ({
-  files,
-  onSelectFile,
-  selectedFileId,
-  onAddFile,
-  onDeleteFile,
-  onDeploy,
-  onAddController,
-}) => {
-  const [contextMenu, setContextMenu] = useState({
-    show: false,
-    node: null as FileNode | null,
-    type: '' as 'file' | 'folder' | 'background',
-  });
-
-  const handleContextMenu = (e: React.MouseEvent, node: FileNode) => {
-    e.preventDefault();
-    e.stopPropagation(); // Ensure the event doesn't bubble up
-
-    // Update context menu state
-    setContextMenu({
-      show: true,
-      node,
-      type: node.isFolder ? 'folder' : 'file',
-    });
-  };
-
-  const handleBackgroundContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation(); // Ensure the event doesn't bubble up
-
-    // If we're clicking directly on a node, the node's onContextMenu handler will take care of it
-    // This handler is only for clicks on the background
-
-    setContextMenu({
-      show: true,
-      node: null,
-      type: 'background',
-    });
-  };
-
-  const closeContextMenu = () => {
-    setContextMenu((prev) => ({ ...prev, show: false }));
-  };
-
-  // Add a useEffect to log when context menu state changes
-  useEffect(() => {}, [contextMenu]);
-
-  return (
-    <>
-      <div className="h-full">
-        <div className="p-2 font-semibold border-b dark:border-gray-700 flex justify-between items-center">
-          <span>Files</span>
-          <div className="flex space-x-1">
-            <button
-              onClick={() => onAddFile(null, false)}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
-              title="Add new file"
-            >
-              <FilePlus className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => onAddFile(null, true)}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
-              title="Add new folder"
-            >
-              <FolderPlus className="h-4 w-4" />
-            </button>
-            {onAddController && (
-              <button
-                onClick={onAddController}
-                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
-                title="Add new controller"
-              >
-                <Server className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div
-          className="overflow-auto h-[calc(100%-6rem)]"
-          onContextMenu={handleBackgroundContextMenu}
-        >
-          {files.map((file) => (
-            <TreeNode
-              key={file.id}
-              node={file}
-              level={0}
-              onSelectFile={onSelectFile}
-              selectedFileId={selectedFileId}
-              onContextMenu={handleContextMenu}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Render the context menu separately */}
-      <ContextMenu
-        show={contextMenu.show}
-        node={contextMenu.node}
-        type={
-          contextMenu.node?.nodeType === 'controller'
-            ? 'controller'
-            : contextMenu.node?.isFolder
-              ? 'folder'
-              : 'file'
-        }
-        onAddFile={onAddFile}
-        onDelete={onDeleteFile}
-        onClose={closeContextMenu}
-        onDeploy={onDeploy}
-      >
-        <></>
-      </ContextMenu>
-    </>
-  );
-};
+import { FileNode } from './types';
 
 // Tab Component
 const EditorTab: React.FC<{
@@ -320,7 +34,7 @@ const EditorTab: React.FC<{
       className={cn(
         'flex items-center px-3 py-2 border-r dark:border-gray-700 cursor-pointer select-none',
         isActive
-          ? 'bg-white dark:bg-gray-800 border-b-2 border-b-blue-500'
+          ? ' bg-white dark:bg-gray-800 border-b-2 border-b-blue-500 pb-[6px]'
           : 'bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800',
       )}
       onClick={onClick}
@@ -1966,7 +1680,7 @@ export default function Dashboard() {
           enable={{ right: true }}
           className="border-r dark:border-gray-700"
         >
-          <FileExplorer
+          <ProjectSidebar
             files={files}
             onSelectFile={handleSelectFile}
             selectedFileId={activeFileId}
@@ -1978,7 +1692,7 @@ export default function Dashboard() {
         </Resizable>
 
         <div className="flex-1 flex flex-col">
-          <div className="flex items-center border-b overflow-x-auto">
+          <div className="h-10 flex items-center border-b overflow-x-auto">
             <div className="flex items-center px-2">
               <Button
                 variant="ghost"
@@ -2027,24 +1741,39 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* File/Folder Creation Dialog */}
-      <NewFileDialog
-        isOpen={fileDialog.isOpen}
-        isFolder={fileDialog.isFolder}
-        onClose={() => setFileDialog({ ...fileDialog, isOpen: false })}
-        onSubmit={createNewFileOrFolder}
-      />
-
-      {/* Delete Confirmation Dialog */}
-      <ConfirmationDialog
-        isOpen={deleteDialog.isOpen}
-        title={`Delete ${deleteDialog.node?.isFolder ? 'Folder' : 'File'}`}
-        message={`Are you sure you want to delete "${deleteDialog.node?.name}"? This action cannot be undone.`}
-        confirmText="Delete"
-        isDestructive={true}
-        onConfirm={confirmDelete}
-        onCancel={() => setDeleteDialog({ isOpen: false, node: null })}
-      />
+      {/* New File Dialog */}
+      {fileDialog.isOpen && (
+        <NewFileDialog
+          isOpen={fileDialog.isOpen}
+          isFolder={fileDialog.isFolder}
+          onClose={() => setFileDialog({ ...fileDialog, isOpen: false })}
+          onSubmit={createNewFileOrFolder}
+        />
+      )}
+      {/* Delete Dialog */}
+      {deleteDialog.isOpen && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Confirm Delete</h2>
+            <p className="mb-6">
+              Are you sure you want to delete{' '}
+              <span className="font-bold">{deleteDialog.node?.name}</span>? This
+              action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteDialog({ isOpen: false, node: null })}
+              >
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete}>
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-4">
         <VariableMonitor className="w-full" />

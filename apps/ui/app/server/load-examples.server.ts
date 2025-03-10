@@ -1,21 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import fs from 'fs';
 import path from 'path';
-
-// Define the FileNode interface for our file system representation
-export interface FileNode {
-  id: string;
-  name: string;
-  isFolder: boolean;
-  children?: FileNode[];
-  content?: string;
-  nodeType?: 'heading' | 'controller' | 'file' | 'folder';
-  metadata?: {
-    ip?: string;
-    version?: string;
-    [key: string]: any;
-  };
-}
+import { FileNode } from '../components/types';
 
 // Server function to load example projects
 export const loadExampleProjects = createServerFn().handler(async () => {
