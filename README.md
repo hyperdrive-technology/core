@@ -1,5 +1,5 @@
-# Inrush
-Inrush is a modern, open-source PLC runtime with support for IEC 61131-3 programming languages and online changes.
+# Hyperdrive
+Hyperdrive is a modern, open-source PLC runtime with support for IEC 61131-3 programming languages and online changes.
 
 ## Features
 - Full support for IEC 61131-3 programming languages via Langium-based DSL
@@ -14,7 +14,7 @@ Inrush is a modern, open-source PLC runtime with support for IEC 61131-3 program
 
 ## Project Structure
 ```
-inrush/
+hyperdrive/
 ├── apps/
 │   ├── runtime/       # PLC runtime (Go)
 │   └── ui/            # IDE + SCADA UI (TanStack Start + tRPC + Shadcn UI)
@@ -44,8 +44,8 @@ inrush/
 Clone the repository:
 
 ```bash
-git clone https://github.com/inrush-io/inrush.git
-cd inrush
+git clone https://github.com/hyperdrive-technology/hyperdrive.git
+cd hyperdrive
 ```
 Install dependencies:
 
@@ -95,7 +95,7 @@ Configure Caddy (Caddyfile):
 
 ```caddyfile
 
-inrush.example.com {
+hyperdrive.example.com {
     reverse_proxy localhost:8080
     tls {
         email your-email@example.com
@@ -145,7 +145,7 @@ The web UI is built with:
 - tRPC
 - Shadcn UI
 - WebSocket communication for real-time updates
-- Typed API (defined in @inrush/api)
+- Typed API (defined in @hyperdrive/api)
 
 ### IDE
 The IDE is based on Theia and provides:
