@@ -3,8 +3,8 @@ package parser_test
 import (
 	"testing"
 
-	"github.com/inrush-io/inrush/apps/runtime/internal/parser"
-	"github.com/inrush-io/inrush/apps/runtime/internal/parser/ast"
+	"github.com/hyperdrive/core/apps/runtime/internal/parser"
+	"github.com/hyperdrive/core/apps/runtime/internal/parser/ast"
 )
 
 type basicType struct {

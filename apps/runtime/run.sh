@@ -8,8 +8,8 @@ echo "Installing Go dependencies..."
 go mod tidy
 
 # Build the runtime
-echo "Building Inrush runtime..."
-go build -o ./bin/inrush ./cmd/inrush
+echo "Building hyperdrive runtime..."
+go build -o ./bin/hyperdrive ./cmd/hyperdrive
 
 # Check if build was successful
 if [ $? -ne 0 ]; then
@@ -18,5 +18,5 @@ if [ $? -ne 0 ]; then
 fi
 
 # Run the runtime
-echo "Starting Inrush runtime on http://localhost:3000"
-./bin/inrush
+echo "Starting hyperdrive runtime on http://localhost:3000"
+./bin/hyperdrive

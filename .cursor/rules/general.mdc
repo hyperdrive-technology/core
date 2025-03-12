@@ -11,7 +11,7 @@ This document defines the high-level architecture decisions and patterns for the
 ## Project Structure
 
 ```
-inrush/
+hyperdrive/
 ├── apps/              # Application packages
 │   ├── runtime/       # Go PLC runtime
 │   ├── ui/            # Next.js web interface (t3 stack)

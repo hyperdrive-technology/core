@@ -1,5 +1,5 @@
 # Project configuration
-DOCKER_REPO := inrush
+DOCKER_REPO := hyperdrive
 RUNTIME_DIR := apps/runtime
 UI_DIR := apps/ui
 WEBSITE_DIR := apps/website
@@ -15,7 +15,7 @@ ESLINT := $(PNPM) eslint
 
 # Build configuration
 GO_BUILD_FLAGS := -v
-GO_BUILD_OUTPUT := $(RUNTIME_DIR)/dist/inrush
+GO_BUILD_OUTPUT := $(RUNTIME_DIR)/dist/hyperdrive
 
 # Docker configuration
 DOCKER_BUILD_ARGS := --build-arg NODE_ENV=production
@@ -43,7 +43,7 @@ build-ui: node_modules ## Build UI
 build-go: go.sum ## Build Go runtime
 	@echo "Building Go runtime..."
 	@mkdir -p $(RUNTIME_DIR)/dist
-	@cd $(RUNTIME_DIR) && $(GO) build $(GO_BUILD_FLAGS) -o dist/inrush ./cmd/inrush
+	@cd $(RUNTIME_DIR) && $(GO) build $(GO_BUILD_FLAGS) -o dist/hyperdrive ./cmd/hyperdrive
 
 .PHONY: dev
 dev: ## Start development environment
@@ -63,7 +63,7 @@ dev-ui: node_modules ## Start UI in development mode
 .PHONY: dev-go
 dev-go: go.sum ## Start Go runtime in development mode
 	@echo "Starting Go runtime in development mode..."
-	@cd $(RUNTIME_DIR) && $(GO) run ./cmd/inrush
+	@cd $(RUNTIME_DIR) && $(GO) run ./cmd/hyperdrive
 
 .PHONY: test
 test: test-ui test-go ## Run all tests

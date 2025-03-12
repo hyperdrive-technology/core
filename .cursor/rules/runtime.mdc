@@ -11,7 +11,7 @@ globs: ["**/runtime/**/*.go", "**/cmd/**/*.go", "**/pkg/**/*.go", "**/internal/*
    ```
    runtime/
    ├── cmd/              # Application entry points
-   │   └── inrush/      # Main PLC runtime
+   │   └── hyperdrive/      # Main PLC runtime
    ├── internal/         # Private application code
    │   ├── runtime/     # PLC runtime core
    │   ├── parser/      # IEC 61131-3 parser

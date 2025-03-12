@@ -74,7 +74,7 @@ export function AppSidebar() {
           {state !== 'collapsed' && (
             <div className="flex items-center gap-2 px-2">
               <span className="text-xl font-bold group-data-[collapsible=icon]:data-[state=closed]:hidden">
-                Inrush
+                Hyperdrive
               </span>
               <span className="text-xs bg-muted px-1.5 py-0.5 rounded group-data-[collapsible=icon]:data-[state=closed]:hidden">
                 v0.1.0

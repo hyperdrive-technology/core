@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/inrush-io/inrush/apps/runtime/internal/parser"
-	"github.com/inrush-io/inrush/apps/runtime/internal/parser/ast"
+	"github.com/hyperdrive/core/apps/runtime/internal/parser"
+	"github.com/hyperdrive/core/apps/runtime/internal/parser/ast"
 )
 
 // Program represents an executable IEC 61131-3 program

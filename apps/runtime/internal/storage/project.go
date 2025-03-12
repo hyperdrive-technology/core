@@ -79,7 +79,7 @@ func NewStorageManager(endpoint, accessKey, secretKey, bucketName string) (*Stor
 	}
 
 	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "inrush-projects-")
+	tempDir, err := os.MkdirTemp("", "hyperdrive-projects-")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}

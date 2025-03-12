@@ -6,7 +6,7 @@ import (
 
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
-	"github.com/inrush-io/inrush/apps/runtime/internal/parser/ast"
+	"github.com/hyperdrive/core/apps/runtime/internal/parser/ast"
 )
 
 // IEC61131Grammar defines the grammar for IEC 61131-3 programs

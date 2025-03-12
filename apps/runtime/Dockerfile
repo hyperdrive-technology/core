@@ -16,7 +16,7 @@ RUN go mod download
 COPY . .
 
 # Build the application with static linking
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags='-w -s -extldflags "-static"' -o inrush ./cmd/inrush
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags='-w -s -extldflags "-static"' -o hyperdrive ./cmd/hyperdrive
 
 # Final stage
 FROM scratch
@@ -26,7 +26,7 @@ COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 # Copy SSL certificates from builder
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Copy the binary
-COPY --from=builder /app/inrush /inrush
+COPY --from=builder /app/hyperdrive /hyperdrive
 
 # Set environment variables
 ENV GO_ENV=production
@@ -35,4 +35,4 @@ ENV GO_ENV=production
 EXPOSE 3000 2222
 
 # Run the binary
-ENTRYPOINT ["/inrush"]
+ENTRYPOINT ["/hyperdrive"]

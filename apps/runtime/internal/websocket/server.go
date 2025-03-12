@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/inrush-io/inrush/apps/runtime/internal/runtime"
+	"github.com/hyperdrive/core/apps/runtime/internal/runtime"
 )
 
 // Server handles WebSocket connections and HTTP API

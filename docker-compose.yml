@@ -14,13 +14,13 @@ services:
       - "2222:2222"  # PLC communication
     environment:
       - GO_ENV=development
-      - INRUSH_DATA_DIR=/data
+      - HYPERDRIVE_DATA_DIR=/data
       - DB_HOST=timescaledb
       - DB_PORT=5432
-      - DB_NAME=inrush
-      - DB_USER=inrush
-      - DB_PASSWORD=inrush
-    command: go run ./cmd/inrush/main.go
+      - DB_NAME=hyperdrive
+      - DB_USER=hyperdrive
+      - DB_PASSWORD=hyperdrive
+    command: go run ./cmd/hyperdrive/main.go
 
   ui:
     build:

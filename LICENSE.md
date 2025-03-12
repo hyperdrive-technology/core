@@ -1,4 +1,4 @@
-# INRUSH-CORE LICENSE AGREEMENT
+# HYPERDRIVE-CORE LICENSE AGREEMENT
 
 ## Part 1: GNU Affero General Public License v3.0
 
@@ -13,7 +13,7 @@ it under the terms of the GNU Affero General Public License as published
 by the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-## Part 2: Additional Terms for INRUSH-CORE
+## Part 2: Additional Terms for HYPERDRIVE-CORE
 
 ### 2.1 Contributor Grant
 
@@ -23,8 +23,8 @@ By contributing to this repository through pull requests, issues, or other means
 
 2. Future Licensing: You agree contributions may be used under:
    - This AGPLv3 license
-   - Any future license adopted by INRUSH-AI
-   - Commercial licenses offered by INRUSH-AI
+   - Any future license adopted by HYPERDRIVE-AI
+   - Commercial licenses offered by HYPERDRIVE-AI
 
 3. Moral Rights: You waive any claims to "moral rights" under copyright law.
 
@@ -51,5 +51,5 @@ By making any contribution to this repository:
 
 To Contribute:
 1. Include this notice in your first pull request
-2. Maintainers will confirm acceptance via @inrush-cla-bot
+2. Maintainers will confirm acceptance via @hyperdrive-cla-bot
 3. Subsequent contributions require no additional signing

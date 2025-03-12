@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/inrush-io/inrush/apps/runtime/internal/runtime"
-	"github.com/inrush-io/inrush/apps/runtime/internal/websocket"
+	"github.com/hyperdrive/core/apps/runtime/internal/runtime"
+	"github.com/hyperdrive/core/apps/runtime/internal/websocket"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 	// Initialize runtime with configuration
 	rt, err := runtime.New(runtime.Config{
 		ScanTime: 100 * time.Millisecond,
-		DataDir:  getEnvOrDefault("INRUSH_DATA_DIR", "./data"),
+		DataDir:  getEnvOrDefault("HYPERDRIVE_DATA_DIR", "./data"),
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize runtime: %v", err)

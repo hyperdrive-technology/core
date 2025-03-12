@@ -59,7 +59,7 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body suppressHydrationWarning>
-        <ThemeProvider defaultTheme="light" storageKey="inrush-ui-theme">
+        <ThemeProvider defaultTheme="light" storageKey="hyperdrive-ui-theme">
           <Outlet />
         </ThemeProvider>
         <Scripts />
