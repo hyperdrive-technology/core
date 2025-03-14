@@ -24,8 +24,9 @@ import {
   Plus,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { FileNode } from '../components/types';
 import { createProject } from '../server/create-project.server';
-import { FileNode, loadExampleProjects } from '../server/load-examples.server';
+import { loadExampleProjects } from '../server/load-examples.server';
 
 interface Project {
   id: string;
@@ -173,7 +174,7 @@ function HomePage() {
       <header className="border-b">
         <div className="flex h-16 items-center px-4 justify-between">
           <div className="flex items-center space-x-2">
-            <span className="text-xl font-bold">Inrush</span>
+            <span className="text-xl font-bold">Hyperdrive</span>
             <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
               v0.1.0
             </span>

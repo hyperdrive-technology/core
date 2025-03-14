@@ -22,6 +22,8 @@ interface FilesTabProps {
   onDeleteFile: (node: FileNode) => void;
   onDeploy: (node: FileNode) => void;
   onAddController?: () => void;
+  onOpenVariableMonitor?: (node: FileNode) => void;
+  onOpenTrends?: (node: FileNode) => void;
 }
 
 export default function FilesTab({
@@ -32,6 +34,8 @@ export default function FilesTab({
   onDeleteFile,
   onDeploy,
   onAddController,
+  onOpenVariableMonitor,
+  onOpenTrends,
 }: FilesTabProps) {
   const [contextMenu, setContextMenu] = useState({
     show: false,
@@ -120,13 +124,15 @@ export default function FilesTab({
           contextMenu.node?.nodeType === 'controller'
             ? 'controller'
             : contextMenu.node?.isFolder
-              ? 'folder'
-              : 'file'
+            ? 'folder'
+            : 'file'
         }
         onAddFile={onAddFile}
         onDelete={onDeleteFile}
         onClose={closeContextMenu}
         onDeploy={onDeploy}
+        onOpenVariableMonitor={onOpenVariableMonitor}
+        onOpenTrends={onOpenTrends}
       >
         <></>
       </ContextMenu>
@@ -151,7 +157,7 @@ export function TreeNode({
   onContextMenu,
 }: TreeNodeProps) {
   const [isOpen, setIsOpen] = useState(
-    node.nodeType === 'heading' ? true : false,
+    node.nodeType === 'heading' ? true : false
   );
 
   const handleToggle = (e: React.MouseEvent) => {
@@ -196,7 +202,11 @@ export function TreeNode({
       <div
         className={`flex items-center p-1 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 ${
           selectedFileId === node.id ? 'bg-gray-200 dark:bg-gray-700' : ''
-        } ${node.nodeType === 'heading' ? 'font-bold text-sm border-b border-gray-300 dark:border-gray-600' : ''}`}
+        } ${
+          node.nodeType === 'heading'
+            ? 'font-bold text-sm border-b border-gray-300 dark:border-gray-600'
+            : ''
+        }`}
         style={{
           paddingLeft:
             node.nodeType === 'heading' ? '4px' : `${level * 12 + 4}px`,

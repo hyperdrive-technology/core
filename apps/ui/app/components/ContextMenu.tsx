@@ -1,4 +1,6 @@
 import {
+  Activity,
+  Database,
   ExternalLink,
   FilePlus,
   FolderPlus,
@@ -7,7 +9,7 @@ import {
   Upload,
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
-import { FileNode } from '../server/load-examples.server';
+import { FileNode } from './types';
 
 interface ContextMenuProps {
   show: boolean;
@@ -18,6 +20,8 @@ interface ContextMenuProps {
   onClose: () => void;
   children: React.ReactNode;
   onDeploy?: (node: FileNode) => void;
+  onOpenVariableMonitor?: (node: FileNode) => void;
+  onOpenTrends?: (node: FileNode) => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -29,6 +33,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onClose,
   children,
   onDeploy,
+  onOpenVariableMonitor,
+  onOpenTrends,
 }) => {
   // Track context menu position
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -96,6 +102,22 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     onClose();
   };
 
+  const handleOpenVariableMonitor = () => {
+    console.log('Open Variable Monitor clicked for:', node?.name);
+    if (node && onOpenVariableMonitor) {
+      onOpenVariableMonitor(node);
+      onClose();
+    }
+  };
+
+  const handleOpenTrends = () => {
+    console.log('Open Trends clicked for:', node?.name);
+    if (node && onOpenTrends) {
+      onOpenTrends(node);
+      onClose();
+    }
+  };
+
   // Check if the node is a controller
   const isController = node?.nodeType === 'controller';
 
@@ -142,6 +164,43 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               </>
             )}
 
+            {/* Monitoring options for files, folders, and controllers */}
+            {(type === 'file' || type === 'folder' || isController) &&
+              !isHeading &&
+              onOpenVariableMonitor && (
+                <button
+                  onClick={handleOpenVariableMonitor}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <Database className="h-4 w-4" />
+                  <span>Open Variable Monitor</span>
+                </button>
+              )}
+
+            {/* Trends option - only for .st files */}
+            {type === 'file' &&
+              !isHeading &&
+              onOpenTrends &&
+              node?.name.toLowerCase().endsWith('.st') && (
+                <button
+                  onClick={handleOpenTrends}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <Activity className="h-4 w-4" />
+                  <span>Open Trends</span>
+                </button>
+              )}
+
+            {/* Add separator if we have monitoring options */}
+            {(type === 'file' || type === 'folder' || isController) &&
+              !isHeading &&
+              (onOpenVariableMonitor ||
+                (onOpenTrends &&
+                  (type !== 'file' ||
+                    node?.name.toLowerCase().endsWith('.st')))) && (
+                <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+              )}
+
             {/* Devices-specific options */}
             {isHeading && headingType === 'Devices' && (
               <button
@@ -185,7 +244,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             {(type === 'folder' ||
               (isHeading &&
                 !['Devices', 'Logic', 'Control'].includes(
-                  headingType || '',
+                  headingType || ''
                 ))) && (
               <button
                 onClick={handleAddFile}
@@ -225,8 +284,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                       {isController
                         ? 'Controller'
                         : type === 'folder'
-                          ? 'Folder'
-                          : 'File'}
+                        ? 'Folder'
+                        : 'File'}
                     </span>
                   </button>
                 </>

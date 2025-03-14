@@ -16,7 +16,6 @@ export const CommandBar = ({
   onToggleConnection,
   isConnected,
   hasUnsavedChanges,
-  isDeploying = false,
 }: CommandBarProps) => {
   return (
     <div className="flex items-center justify-between p-2 border-b dark:border-gray-700  dark:bg-gray-900">
@@ -50,7 +49,9 @@ export const CommandBar = ({
           size="sm"
           onClick={onToggleConnection}
           title={isConnected ? 'Disconnect from Runtime' : 'Connect to Runtime'}
-          className={`flex items-center ${isConnected ? 'bg-green-600 hover:bg-green-700' : ''}`}
+          className={`flex items-center ${
+            isConnected ? 'bg-green-600 hover:bg-green-700' : ''
+          }`}
         >
           {isConnected ? (
             <>

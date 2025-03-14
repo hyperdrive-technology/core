@@ -5,7 +5,7 @@ export interface FileNode {
   isFolder: boolean;
   children?: FileNode[];
   content?: string;
-  nodeType?: 'heading' | 'controller' | 'file' | 'folder';
+  nodeType?: 'heading' | 'controller' | 'file' | 'folder' | 'trends';
   metadata?: {
     ip?: string;
     version?: string;

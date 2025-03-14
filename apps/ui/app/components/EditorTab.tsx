@@ -1,6 +1,8 @@
-import { X } from 'lucide-react';
+import { Activity, Database, X } from 'lucide-react';
 import React from 'react';
 import { FileNode } from './types';
+
+export type TabType = 'file' | 'variables' | 'trends';
 
 interface EditorTabProps {
   file: FileNode;
@@ -8,10 +10,11 @@ interface EditorTabProps {
   onClick: () => void;
   onClose: () => void;
   hasUnsavedChanges: boolean;
+  tabType?: TabType;
 }
 
 /**
- * EditorTab component that displays a tab for an open file
+ * EditorTab component that displays a tab for an open file or special tab
  */
 export default function EditorTab({
   file,
@@ -19,10 +22,35 @@ export default function EditorTab({
   onClick,
   onClose,
   hasUnsavedChanges,
+  tabType = 'file',
 }: EditorTabProps) {
   const handleClose = (e: React.MouseEvent) => {
     e.stopPropagation();
     onClose();
+  };
+
+  // Render appropriate icon based on tab type
+  const renderIcon = () => {
+    switch (tabType) {
+      case 'variables':
+        return <Database className="h-3 w-3 mr-1" />;
+      case 'trends':
+        return <Activity className="h-3 w-3 mr-1" />;
+      default:
+        return null;
+    }
+  };
+
+  // Determine tab title based on tab type
+  const getTabTitle = () => {
+    switch (tabType) {
+      case 'variables':
+        return `Variables: ${file.name}`;
+      case 'trends':
+        return `Trends: ${file.name}`;
+      default:
+        return file.name;
+    }
   };
 
   return (
@@ -34,7 +62,8 @@ export default function EditorTab({
       }`}
       onClick={onClick}
     >
-      <span className="truncate max-w-[150px]">{file.name}</span>
+      {renderIcon()}
+      <span className="truncate max-w-[150px]">{getTabTitle()}</span>
       {hasUnsavedChanges && (
         <span className="ml-1 text-blue-600 dark:text-blue-400">●</span>
       )}

@@ -6,6 +6,7 @@ import {
   Scripts,
 } from '@tanstack/react-router';
 
+import WebSocketProvider from '@/components/context/WebSocketContext';
 import { ThemeProvider } from '@/components/ui/theme-provider';
 import appCss from '@/styles/app.css?url';
 
@@ -60,7 +61,9 @@ function RootDocument() {
       </head>
       <body suppressHydrationWarning>
         <ThemeProvider defaultTheme="light" storageKey="hyperdrive-ui-theme">
-          <Outlet />
+          <WebSocketProvider>
+            <Outlet />
+          </WebSocketProvider>
         </ThemeProvider>
         <Scripts />
       </body>

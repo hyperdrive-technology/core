@@ -1,10 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import MonacoEditor from '../../components/MonacoEditor';
-import {
-  FileNode,
-  loadExampleProjects,
-} from '../../server/load-examples.server';
+import { FileNode } from '../../components/types';
+import { loadExampleProjects } from '../../server/load-examples.server';
 
 export const Route = createFileRoute('/_app/logic')({
   component: EditorPage,
@@ -30,6 +28,7 @@ function EditorPage() {
   const location = window.location;
   const searchParams = new URLSearchParams(location.search);
   const projectId = searchParams.get('projectId');
+  const projectName = searchParams.get('projectName');
   const [projectFiles, setProjectFiles] = useState<FileNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,15 +59,15 @@ function EditorPage() {
           if (project.children) {
             // Find the Devices, Logic, and Control directories
             const devicesDir = project.children.find(
-              (node) => node.isFolder && node.name.toLowerCase() === 'devices',
+              (node) => node.isFolder && node.name.toLowerCase() === 'devices'
             );
 
             const logicDir = project.children.find(
-              (node) => node.isFolder && node.name.toLowerCase() === 'logic',
+              (node) => node.isFolder && node.name.toLowerCase() === 'logic'
             );
 
             const controlDir = project.children.find(
-              (node) => node.isFolder && node.name.toLowerCase() === 'control',
+              (node) => node.isFolder && node.name.toLowerCase() === 'control'
             );
 
             // Add the Devices section
@@ -114,7 +113,7 @@ function EditorPage() {
                             'Main PLC controller for production line',
                         },
                         null,
-                        2,
+                        2
                       ),
                       metadata: {
                         ip: '192.168.1.100',
@@ -202,6 +201,9 @@ export default function Dashboard() {
       ) : (
         <MonacoEditor
           initialFiles={projectFiles.length > 0 ? projectFiles : undefined}
+          projectName={
+            projectName || (projectId === 'example-1' ? 'Example 1' : undefined)
+          }
         />
       )}
     </div>

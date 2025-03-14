@@ -16,6 +16,8 @@ export interface ProjectSidebarProps {
   onDeleteFile: (node: FileNode) => void;
   onDeploy: (node: FileNode) => void;
   onAddController?: () => void;
+  onOpenVariableMonitor?: (node: FileNode) => void;
+  onOpenTrends?: (node: FileNode) => void;
 }
 
 const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
@@ -26,6 +28,8 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   onDeleteFile,
   onDeploy,
   onAddController,
+  onOpenVariableMonitor,
+  onOpenTrends,
 }) => {
   // State for the current explorer mode
   const [explorerMode, setExplorerMode] = useState<ExplorerMode>('files');
@@ -74,6 +78,8 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
             onDeleteFile={onDeleteFile}
             onDeploy={onDeploy}
             onAddController={onAddController}
+            onOpenVariableMonitor={onOpenVariableMonitor}
+            onOpenTrends={onOpenTrends}
           />
         )}
 

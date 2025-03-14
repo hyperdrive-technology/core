@@ -11,18 +11,20 @@ import {
   registerIEC61131Language,
 } from '../server/iec61131/language-service';
 import { CommandBar } from './CommandBar';
+import { TabType } from './EditorTab';
 import NewFileDialog from './NewFileDialog';
 import ProjectSidebar from './ProjectSidebar/ProjectSidebar';
-import VariableMonitor from './VariableMonitor';
+import TrendsTab from './TrendsTab';
 import { FileNode } from './types';
 
-// Tab Component
-const EditorTab: React.FC<{
+// Tab Component (rename to LocalEditorTab to avoid naming conflicts)
+const LocalEditorTab: React.FC<{
   file: FileNode;
   isActive: boolean;
   onClick: () => void;
   onClose: () => void;
   hasUnsavedChanges: boolean;
+  tabType?: TabType;
 }> = ({ file, isActive, onClick, onClose, hasUnsavedChanges }) => {
   const handleClose = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -35,7 +37,7 @@ const EditorTab: React.FC<{
         'flex items-center px-3 py-2 border-r dark:border-gray-700 cursor-pointer select-none',
         isActive
           ? ' bg-white dark:bg-gray-800 border-b-2 border-b-blue-500 pb-[6px]'
-          : 'bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800',
+          : 'bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800'
       )}
       onClick={onClick}
     >
@@ -61,9 +63,10 @@ const EditorTab: React.FC<{
 // Update the component to accept initialFiles prop
 interface MonacoEditorProps {
   initialFiles?: FileNode[];
+  projectName?: string; // Add optional project name prop
 }
 
-const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
+const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const [files, setFiles] = useState<FileNode[]>(initialFiles ?? []);
@@ -94,9 +97,66 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
 
   // Add a state for tracking the current project/folder
-  const [currentProjectName, setCurrentProjectName] = useState<string | null>(
-    null,
+  // Use provided projectName from props if available, otherwise default
+  const [currentProjectName, setCurrentProjectName] = useState<string>(
+    projectName || 'Hyperdrive Project'
   );
+
+  // Keep a reference to whether we have a prop-provided project name
+  const hasProjectNameProp = useRef(!!projectName);
+
+  // Update currentProjectName if projectName prop changes
+  useEffect(() => {
+    if (projectName) {
+      setCurrentProjectName(projectName);
+      hasProjectNameProp.current = true;
+    }
+  }, [projectName]);
+
+  // Detect project name from folders when component mounts
+  useEffect(() => {
+    // Skip if we have a project name from props
+    if (hasProjectNameProp.current) {
+      return;
+    }
+
+    // Check if we have the example project structure
+    const hasDevicesFolder = files.some(
+      (file) => file.isFolder && file.name.toLowerCase() === 'devices'
+    );
+    const hasLogicFolder = files.some(
+      (file) => file.isFolder && file.name.toLowerCase() === 'logic'
+    );
+    const hasControlFolder = files.some(
+      (file) => file.isFolder && file.name.toLowerCase() === 'control'
+    );
+
+    // If we have the standard project structure, set the project name to "Example 1"
+    if (hasDevicesFolder && hasLogicFolder && hasControlFolder) {
+      setCurrentProjectName('Example 1');
+    }
+  }, [files, projectName]); // This will run when files change, but only set the name once
+
+  // Add another useEffect that runs to detect file IDs if they contain example paths
+  useEffect(() => {
+    // Skip if we have a project name from props
+    if (hasProjectNameProp.current) {
+      return;
+    }
+
+    // Try to directly look for "example-1" in file paths
+    for (const file of files) {
+      if (file.id && typeof file.id === 'string') {
+        if (
+          file.id.includes('example-1') ||
+          file.id.includes('examples/example-1')
+        ) {
+          setCurrentProjectName('Example 1');
+          break;
+        }
+      }
+    }
+  }, [files]);
 
   // Auto-open the first file from initialFiles if provided
   useEffect(() => {
@@ -231,7 +291,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
             monacoRef.current.editor.createModel(
               file.content || '',
               language,
-              uri,
+              uri
             ) || null;
           isNewModel = true;
         }
@@ -272,7 +332,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
                     text: file.content || '',
                   },
                 ],
-                () => null,
+                () => null
               );
 
               // Restore the flag
@@ -317,7 +377,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         }
       }
     },
-    [editorReady],
+    [editorReady]
   );
 
   // Handle editor mounting
@@ -386,7 +446,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
             }
           },
         });
-      },
+      }
     );
 
     // Add Format Document command for structured text files
@@ -621,7 +681,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         // Instead, we'll set a flag that will be used by the language client hook
         const worker = new Worker(
           new URL('../workers/langium-worker.ts', import.meta.url),
-          { type: 'module' },
+          { type: 'module' }
         );
 
         setupLanguageClient(monacoRef.current!, editorRef.current!, worker);
@@ -639,7 +699,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   function setupLanguageClient(
     monaco: Monaco,
     editor: editor.IStandaloneCodeEditor,
-    worker: Worker,
+    worker: Worker
   ) {
     let currentModel: editor.ITextModel | null = null;
     let modelChangeSubscription: { dispose: () => void } | null = null;
@@ -661,7 +721,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
             isProcessingDiagnostics = true;
 
             const model = monaco.editor.getModel(
-              monaco.Uri.parse(event.data.uri),
+              monaco.Uri.parse(event.data.uri)
             );
 
             if (model) {
@@ -678,9 +738,9 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
                     d.severity === 1
                       ? monaco.MarkerSeverity.Error
                       : d.severity === 2
-                        ? monaco.MarkerSeverity.Warning
-                        : monaco.MarkerSeverity.Info,
-                })),
+                      ? monaco.MarkerSeverity.Warning
+                      : monaco.MarkerSeverity.Info,
+                }))
               );
             }
 
@@ -740,7 +800,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
                   contentChangeDebounce = null;
                 }, 800); // Longer delay to ensure user has finished typing
               } catch (error) {}
-            },
+            }
           );
         }
       };
@@ -807,7 +867,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
       setNavHistory([...newHistory, fileId]);
       setNavPosition(newHistory.length);
     },
-    [navHistory, navPosition],
+    [navHistory, navPosition]
   );
 
   const handleNavigateBack = () => {
@@ -856,50 +916,53 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   const handleSelectFile = useCallback(
     (node: FileNode, addHistory = true) => {
       if (!node.isFolder) {
-        // Find which project (top-level folder) this file belongs to
-        const findProjectForFile = (
-          nodes: FileNode[],
-          targetId: string,
-        ): string | null => {
-          // Helper function to search in the file tree
-          const findProject = (
-            currentNodes: FileNode[],
-            id: string,
-            currentParents: FileNode[] = [],
-          ): { found: boolean; projectName: string | null } => {
-            for (const n of currentNodes) {
-              // If this is the file we're looking for
-              if (n.id === id) {
-                // Check if this file has any parent (which would be the project)
-                if (currentParents.length > 0) {
-                  // The first parent in the chain is the top-level folder (project)
-                  return { found: true, projectName: currentParents[0].name };
+        // Skip project name detection if we have a project name from props
+        if (!hasProjectNameProp.current) {
+          // Find which project (top-level folder) this file belongs to
+          const findProjectForFile = (
+            nodes: FileNode[],
+            targetId: string
+          ): string => {
+            // Helper function to search in the file tree
+            const findProject = (
+              currentNodes: FileNode[],
+              id: string,
+              currentParents: FileNode[] = []
+            ): { found: boolean; projectName: string } => {
+              for (const n of currentNodes) {
+                // If this is the file we're looking for
+                if (n.id === id) {
+                  // Check if this file has any parent (which would be the project)
+                  if (currentParents.length > 0) {
+                    // The first parent in the chain is the top-level folder (project)
+                    return { found: true, projectName: currentParents[0].name };
+                  }
+                  // File at root level - use a default project name instead of null
+                  return { found: true, projectName: 'Hyperdrive Project' };
                 }
-                // File at root level - not in a project
-                return { found: true, projectName: null };
-              }
 
-              // If not found and we have a folder with children, search recursively
-              if (n.isFolder && n.children) {
-                const result = findProject(n.children, id, [
-                  ...currentParents,
-                  n,
-                ]);
-                if (result.found) {
-                  return result;
+                // If not found and we have a folder with children, search recursively
+                if (n.isFolder && n.children) {
+                  const result = findProject(n.children, id, [
+                    ...currentParents,
+                    n,
+                  ]);
+                  if (result.found) {
+                    return result;
+                  }
                 }
               }
-            }
-            return { found: false, projectName: null };
+              return { found: false, projectName: 'Hyperdrive Project' };
+            };
+
+            const result = findProject(nodes, targetId);
+            return result.projectName;
           };
 
-          const result = findProject(nodes, targetId);
-          return result.projectName;
-        };
-
-        // Find the project name for this file
-        const projectName = findProjectForFile(files, node.id);
-        setCurrentProjectName(projectName);
+          // Find the project name for this file
+          const projectName = findProjectForFile(files, node.id);
+          setCurrentProjectName(projectName);
+        }
 
         // Check if file is already open
         const isFileOpen = openFiles.some((file) => file.id === node.id);
@@ -926,7 +989,14 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         }
       }
     },
-    [openFiles, displayFileInEditor, editorReady, addToHistory, files],
+    [
+      openFiles,
+      displayFileInEditor,
+      editorReady,
+      addToHistory,
+      files,
+      projectName,
+    ]
   );
 
   // Update editor content when activeFileId changes
@@ -995,10 +1065,8 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
       // Also update in open files
       setOpenFiles((prevOpenFiles) =>
         prevOpenFiles.map((file) =>
-          file.id === activeFileId
-            ? { ...file, content: currentContent }
-            : file,
-        ),
+          file.id === activeFileId ? { ...file, content: currentContent } : file
+        )
       );
 
       // Reset unsaved changes flag for this file
@@ -1025,7 +1093,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         {
           description:
             'This is a placeholder for the actual deployment functionality',
-        },
+        }
       );
 
       // Simulate API call
@@ -1117,8 +1185,8 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         // Update in open files
         setOpenFiles((prev) =>
           prev.map((file) =>
-            file.id === activeFile.id ? { ...file, content: newContent } : file,
-          ),
+            file.id === activeFile.id ? { ...file, content: newContent } : file
+          )
         );
       }
 
@@ -1179,7 +1247,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
 
     const controllerIp = prompt(
       'Enter controller IP address:',
-      '192.168.1.100',
+      '192.168.1.100'
     );
     if (!controllerIp) return;
 
@@ -1202,7 +1270,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
           description: 'Main PLC controller for production line',
         },
         null,
-        2,
+        2
       ),
       metadata: {
         ip: controllerIp,
@@ -1251,7 +1319,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
         // Create a controller with a default IP
         const controllerIp = prompt(
           'Enter controller IP address:',
-          '192.168.1.100',
+          '192.168.1.100'
         );
         if (!controllerIp) return;
 
@@ -1270,7 +1338,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
               description: 'Main PLC controller for production line',
             },
             null,
-            2,
+            2
           ),
           metadata: {
             ip: controllerIp,
@@ -1404,7 +1472,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
       // If it's the active file, set a new active file or null
       if (activeFileId === nodeToDelete.id) {
         const remainingFiles = openFiles.filter(
-          (f) => f.id !== nodeToDelete.id,
+          (f) => f.id !== nodeToDelete.id
         );
         if (remainingFiles.length > 0) {
           setActiveFileId(remainingFiles[0].id);
@@ -1460,7 +1528,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
 
   // Helper function to format project name
   const formatProjectName = (name: string | null): string => {
-    if (!name) return 'No Project Selected';
+    if (!name) return 'Hyperdrive Project';
 
     // Convert from kebab-case or snake_case to Title Case
     return name
@@ -1536,10 +1604,30 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
   // New state for deploying
   const [isDeploying, setIsDeploying] = useState(false);
 
+  const handleOpenTrends = (node: FileNode) => {
+    // For trends, we'll create a special node with a unique ID
+    const trendsNode: FileNode = {
+      ...node,
+      id: `trends-${node.id}`,
+      name: `Trends: ${node.name}`,
+      nodeType: 'trends', // Using a valid nodeType
+    };
+
+    // Check if we already have this trends tab open
+    if (openFiles.some((f) => f.id === trendsNode.id)) {
+      // If it's already open, just activate it
+      setActiveFileId(trendsNode.id);
+    } else {
+      // Add it to open files
+      setOpenFiles([...openFiles, trendsNode]);
+      setActiveFileId(trendsNode.id);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <CommandBar
-        projectName={formatProjectName(currentProjectName)}
+        projectName={currentProjectName}
         onDeploy={() => {
           // Get the AST and deploy the code
           if (activeFile) {
@@ -1601,6 +1689,7 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
             onDeleteFile={handleDeleteFile}
             onDeploy={handleDeployToController}
             onAddController={handleAddController}
+            onOpenTrends={handleOpenTrends}
           />
         </Resizable>
 
@@ -1627,29 +1716,40 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
               </Button>
             </div>
             {openFiles.map((file) => (
-              <EditorTab
+              <LocalEditorTab
                 key={file.id}
                 file={file}
                 isActive={file.id === activeFileId}
                 onClick={() => handleTabClick(file.id)}
                 onClose={() => handleTabClose(file.id)}
                 hasUnsavedChanges={unsavedFileIds.has(file.id)}
+                tabType={
+                  file.nodeType === 'trends'
+                    ? 'trends'
+                    : file.nodeType === 'controller'
+                    ? 'file'
+                    : 'file'
+                }
               />
             ))}
           </div>
           <div className="flex-1 h-full">
-            <Editor
-              height="calc(100vh - 6rem)"
-              defaultLanguage="plaintext"
-              theme={monacoTheme}
-              onMount={handleEditorDidMount}
-              options={{
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                fontSize: 14,
-                wordWrap: 'on',
-              }}
-            />
+            {activeFile?.nodeType === 'trends' ? (
+              <TrendsTab file={activeFile} />
+            ) : (
+              <Editor
+                height="calc(100vh - 6rem)"
+                defaultLanguage="plaintext"
+                theme={monacoTheme}
+                onMount={handleEditorDidMount}
+                options={{
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontSize: 14,
+                  wordWrap: 'on',
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -1687,10 +1787,6 @@ const MonacoEditor = ({ initialFiles }: MonacoEditorProps) => {
           </div>
         </div>
       )}
-
-      <div className="mt-4">
-        <VariableMonitor className="w-full" />
-      </div>
     </div>
   );
 };
