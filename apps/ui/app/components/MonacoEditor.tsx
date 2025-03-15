@@ -4,18 +4,63 @@ import Editor, { Monaco, OnMount } from '@monaco-editor/react';
 import { ChevronLeft, ChevronRight, File, X } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { Resizable } from 're-resizable';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Component,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
 import {
   IEC61131_LANGUAGE_ID,
   registerIEC61131Language,
 } from '../server/iec61131/language-service';
 import { CommandBar } from './CommandBar';
+import { useWebSocket } from './context/WebSocketContext';
 import { TabType } from './EditorTab';
 import NewFileDialog from './NewFileDialog';
 import ProjectSidebar from './ProjectSidebar/ProjectSidebar';
+import StatusScreen from './StatusScreen';
 import TrendsTab from './TrendsTab';
 import { FileNode } from './types';
+
+// Custom error boundary for the editor
+class EditorErrorBoundary extends Component<{ children: ReactNode }> {
+  state = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('Editor error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 rounded-md m-4">
+          <h3 className="font-bold mb-2">
+            Something went wrong with the editor
+          </h3>
+          <p className="mb-4">
+            The editor encountered an error and could not be displayed.
+          </p>
+          <button
+            onClick={() => this.setState({ hasError: false })}
+            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // Tab Component (rename to LocalEditorTab to avoid naming conflicts)
 const LocalEditorTab: React.FC<{
@@ -241,6 +286,15 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   const displayFileInEditor = useCallback(
     (file: FileNode) => {
       if (!editorRef.current || !monacoRef.current || !editorReady) {
+        console.log('Editor not ready yet, skipping displayFileInEditor');
+        return;
+      }
+
+      // Check if editor's DOM node is available
+      if (!editorRef.current.getDomNode()) {
+        console.log(
+          'Editor DOM node not available, skipping displayFileInEditor'
+        );
         return;
       }
 
@@ -256,6 +310,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       if (extension === 'css') language = 'css';
       if (extension === 'st') language = IEC61131_LANGUAGE_ID; // IEC61131-3 Structured Text
 
+      // Use a try-catch for all Monaco operations to catch any potential errors
       try {
         // Create a unique URI for the model
         const uri = monacoRef.current.Uri.parse(`file:///${file.id}`);
@@ -277,104 +332,101 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           if (currentModel && currentModel.uri.toString() === uri.toString()) {
             // The model is already active, don't replace its content
             // Just restore focus
-            editorRef.current.focus();
+            try {
+              editorRef.current.focus();
+            } catch (e) {
+              console.error('Error focusing editor:', e);
+            }
             return;
           }
 
-          savedSelection = editorRef.current.getSelection();
-          savedScrollPosition = editorRef.current.getScrollTop();
+          try {
+            savedSelection = editorRef.current.getSelection();
+            savedScrollPosition = editorRef.current.getScrollTop();
+          } catch (e) {
+            console.error('Error saving editor state:', e);
+          }
         }
 
-        // Create new model if needed
+        // Create new model if needed with additional error handling
         if (!model) {
-          model =
-            monacoRef.current.editor.createModel(
+          try {
+            model = monacoRef.current.editor.createModel(
               file.content || '',
               language,
               uri
-            ) || null;
-          isNewModel = true;
+            );
+            isNewModel = true;
+          } catch (e) {
+            console.error('Error creating model:', e);
+            return;
+          }
+        } else {
+          // Ensure the model has the correct language
+          try {
+            if (model.getLanguageId() !== language) {
+              monacoRef.current.editor.setModelLanguage(model, language);
+            }
+          } catch (e) {
+            console.error('Error setting model language:', e);
+          }
         }
 
         // If we have a model, set it as the active model
         if (model) {
-          // Set the model to the editor - this is needed regardless of whether it's new or not
-          editorRef.current.setModel(model);
+          // Set the model to the editor with error handling
+          try {
+            editorRef.current.setModel(model);
+          } catch (e) {
+            console.error('Error setting editor model:', e);
+            return;
+          }
 
-          // Only update content for existing models if necessary - for new models the content is already set
-          // AND only if we're switching to a different file, not if the file is already active
-          if (!isNewModel && !editorRef.current.hasTextFocus()) {
-            // Check if content actually needs updating (avoid unnecessary changes)
-            const currentContent = model.getValue();
+          // Only update content for existing models if necessary and with proper error handling
+          if (
+            !isNewModel &&
+            !editorRef.current.hasTextFocus() &&
+            file.content !== undefined
+          ) {
+            try {
+              // Check if content actually needs updating
+              const currentContent = model.getValue();
 
-            if (currentContent !== file.content && file.content !== undefined) {
-              // Save current position
-              const position = editorRef.current.getPosition();
-
-              // Use the pushEditOperations API for more controlled content updates
-              const endLineNumber = model.getLineCount();
-              const endColumn = model.getLineMaxColumn(endLineNumber);
-
-              // Turn off event generation temporarily to avoid triggering worker
-              // We're setting a flag to mark that we're programmatically setting content
-              (model as any)._isSettingContent = true;
-
-              model.pushEditOperations(
-                [],
-                [
-                  {
-                    range: {
-                      startLineNumber: 1,
-                      startColumn: 1,
-                      endLineNumber,
-                      endColumn,
-                    },
-                    text: file.content || '',
-                  },
-                ],
-                () => null
-              );
-
-              // Restore the flag
-              setTimeout(() => {
-                (model as any)._isSettingContent = false;
-              }, 0);
-
-              // Restore cursor if possible
-              if (position) {
-                editorRef.current.setPosition(position);
+              if (currentContent !== file.content) {
+                // Use setValue instead of the more complex pushEditOperations for better stability
+                model.setValue(file.content);
               }
+            } catch (e) {
+              console.error('Error updating model content:', e);
             }
           }
 
-          // Restore selection and scroll position
-          if (savedSelection) {
-            editorRef.current.setSelection(savedSelection);
+          // Restore selection and scroll position with error handling
+          try {
+            if (savedSelection) {
+              editorRef.current.setSelection(savedSelection);
+            }
+
+            if (savedScrollPosition !== null) {
+              editorRef.current.setScrollTop(savedScrollPosition);
+            }
+          } catch (e) {
+            console.error('Error restoring editor state:', e);
           }
 
-          if (savedScrollPosition !== null) {
-            editorRef.current.setScrollTop(savedScrollPosition);
-          }
-
-          // Focus the editor after a short delay to ensure it's ready
+          // Focus the editor with error handling
           setTimeout(() => {
-            if (editorRef.current) {
-              editorRef.current.focus();
-
-              // Only position cursor at beginning for new files
-              if (isNewModel && editorRef.current.getModel()) {
-                editorRef.current.setPosition({ lineNumber: 1, column: 1 });
+            try {
+              if (editorRef.current) {
+                editorRef.current.focus();
               }
+            } catch (e) {
+              console.error('Error focusing editor:', e);
             }
           }, 10);
         }
       } catch (error) {
-        // Fallback approach with additional safety checks
-        if (editorRef.current) {
-          try {
-            editorRef.current.setValue(file.content || '');
-          } catch (fallbackError) {}
-        }
+        console.error('Error in displayFileInEditor:', error);
       }
     },
     [editorReady]
@@ -400,9 +452,15 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     monaco.editor.setTheme(monacoTheme);
 
     // Register the IEC61131 language (Structured Text)
+    let languageRegistered = false;
     try {
+      console.log('Registering IEC61131 language...');
       registerIEC61131Language(monaco);
-    } catch (error) {}
+      languageRegistered = true;
+      console.log('IEC61131 language registered successfully');
+    } catch (error) {
+      console.error('Error registering IEC61131 language:', error);
+    }
 
     // Configure Monaco if needed
     monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
@@ -419,9 +477,17 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       reactNamespace: 'React',
     });
 
+    // Ensure editor is ready before marking as ready
+    // This helps prevent the "Cannot read properties of undefined (reading 'domNode')" error
+    setTimeout(() => {
+      console.log('Setting editor as ready');
+      setEditorReady(true);
+    }, 100);
+
     // Initialize the IEC 61131-3 language services
-    import('../server/iec61131/langium-monaco-setup').then(
-      ({ setupLangiumMonaco }) => {
+    import('../server/iec61131/langium-monaco-setup')
+      .then(({ setupLangiumMonaco }) => {
+        console.log('Setting up Langium Monaco integration...');
         // Set up the Langium language services
         setupLangiumMonaco(monaco);
 
@@ -446,8 +512,10 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
             }
           },
         });
-      }
-    );
+      })
+      .catch((error) => {
+        console.error('Error setting up Langium Monaco integration:', error);
+      });
 
     // Add Format Document command for structured text files
     const formatCommandId = 'format-st-document';
@@ -658,19 +726,146 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
         }
       }, 100);
     });
+  };
 
-    // Signal that the editor is ready
-    setEditorReady(true);
+  // Add a helper function to refresh syntax highlighting
+  const refreshSyntaxHighlighting = useCallback(
+    (model: editor.ITextModel | null, language: string) => {
+      if (!model || !monacoRef.current) return;
 
-    // If we have an active file already, display it
-    if (activeFileId) {
+      try {
+        // Safety check: make sure the editor DOM node exists
+        if (!editorRef.current || !editorRef.current.getDomNode()) {
+          console.log(
+            'Cannot refresh syntax highlighting - editor DOM node not ready'
+          );
+          return;
+        }
+
+        // First ensure the model has the correct language
+        if (model.getLanguageId() !== language) {
+          console.log(`Setting language for model to ${language}`);
+          monacoRef.current.editor.setModelLanguage(model, language);
+        }
+
+        // For structured text files, we may need an extra push
+        if (language === IEC61131_LANGUAGE_ID) {
+          try {
+            // Force tokenization of the entire file
+            const lineCount = model.getLineCount();
+
+            // Manual tokenization - force Monaco to recompute tokens
+            // Note: getLineTokens doesn't exist on ITextModel directly, but we can use related APIs
+            for (let i = 1; i <= lineCount; i++) {
+              // Request tokens indirectly by getting line decorations
+              model.getLineDecorations(i);
+            }
+          } catch (e) {
+            console.error('Error during syntax highlighting tokenization:', e);
+          }
+        }
+      } catch (error) {
+        console.error('Error in refreshSyntaxHighlighting:', error);
+      }
+    },
+    [monacoRef, editorRef]
+  );
+
+  // Update editor content when activeFileId changes
+  useEffect(() => {
+    if (activeFileId && editorReady) {
+      // Find the file by ID
       const activeFile = openFiles.find((file) => file.id === activeFileId);
       if (activeFile) {
-        // Use a delay to ensure the editor is fully initialized
-        setTimeout(() => displayFileInEditor(activeFile), 300);
+        displayFileInEditor(activeFile);
+
+        // After a short delay, refresh syntax highlighting
+        setTimeout(() => {
+          if (editorRef.current && monacoRef.current) {
+            const model = editorRef.current.getModel();
+            if (model) {
+              // Determine language for this file
+              const extension = activeFile.name.split('.').pop()?.toLowerCase();
+              let language = 'plaintext';
+
+              if (extension === 'js') language = 'javascript';
+              if (extension === 'ts') language = 'typescript';
+              if (extension === 'jsx' || extension === 'tsx')
+                language = 'typescript';
+              if (extension === 'json') language = 'json';
+              if (extension === 'html') language = 'html';
+              if (extension === 'css') language = 'css';
+              if (extension === 'st') language = IEC61131_LANGUAGE_ID;
+
+              // Refresh syntax highlighting
+              refreshSyntaxHighlighting(model, language);
+            }
+          }
+        }, 200);
       }
     }
-  };
+  }, [
+    activeFileId,
+    openFiles,
+    displayFileInEditor,
+    editorReady,
+    refreshSyntaxHighlighting,
+  ]);
+
+  // Get WebSocket context at component level
+  const { controllers, connect, disconnect, addController } = useWebSocket();
+
+  // Add a special safety effect to protect against DOM node errors
+  useEffect(() => {
+    // This effect runs when editorReady changes to true
+    // and will safely initialize the editor DOM elements
+    if (editorReady && editorRef.current) {
+      console.log('Running DOM safety effect for Monaco Editor');
+
+      // Function to verify DOM nodes are properly set up
+      const verifyEditorDom = () => {
+        try {
+          const domNode = editorRef.current?.getDomNode();
+          if (!domNode) {
+            console.log('Editor DOM node still not available, will retry');
+            // Retry after a delay
+            setTimeout(verifyEditorDom, 100);
+            return false;
+          }
+          return true;
+        } catch (e) {
+          console.error('Error accessing editor DOM node:', e);
+          return false;
+        }
+      };
+
+      // Initial verification
+      if (!verifyEditorDom()) {
+        // If verification failed, we'll rely on the retry logic in verifyEditorDom
+        return;
+      }
+
+      // If we have an active file and the DOM is verified, try to display it
+      if (activeFileId) {
+        const activeFile = openFiles.find((file) => file.id === activeFileId);
+        if (activeFile) {
+          try {
+            console.log(`Safely displaying active file: ${activeFile.name}`);
+            // Use a short delay to ensure all Monaco Editor internals are ready
+            setTimeout(() => {
+              try {
+                displayFileInEditor(activeFile);
+              } catch (e) {
+                console.error('Error displaying file in safety effect:', e);
+              }
+            }, 100);
+          } catch (e) {
+            console.error('Error in safety effect file display:', e);
+          }
+        }
+      }
+    }
+  }, [editorReady, activeFileId, openFiles, displayFileInEditor]);
 
   // Use our custom language client hook - but only after editor is ready
   useEffect(() => {
@@ -999,17 +1194,6 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     ]
   );
 
-  // Update editor content when activeFileId changes
-  useEffect(() => {
-    if (activeFileId && editorReady) {
-      // Find the file by ID
-      const activeFile = openFiles.find((file) => file.id === activeFileId);
-      if (activeFile) {
-        displayFileInEditor(activeFile);
-      }
-    }
-  }, [activeFileId, openFiles, displayFileInEditor, editorReady]);
-
   // Mark file as having unsaved changes when content changes
   const handleContentChange = useCallback(() => {
     if (activeFileId && editorRef.current) {
@@ -1041,13 +1225,76 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   const handleSaveFile = useCallback(() => {
     if (activeFileId && editorRef.current) {
       const currentContent = editorRef.current.getValue();
+      const activeFile = openFiles.find((file) => file.id === activeFileId);
+
+      // Check if this is a controller configuration file
+      const isControllerFile = activeFile?.nodeType === 'controller';
+      let updatedMetadata = activeFile?.metadata || {};
+
+      // If this is a controller file, parse the JSON to extract the new IP
+      if (isControllerFile && activeFile) {
+        try {
+          const controllerConfig = JSON.parse(currentContent);
+          const newIp = controllerConfig.ip;
+          const oldIp = activeFile.metadata?.ip;
+
+          // Only update if the IP has changed
+          if (newIp && newIp !== oldIp) {
+            updatedMetadata = {
+              ...updatedMetadata,
+              ip: newIp,
+              version: controllerConfig.version || updatedMetadata.version,
+              description:
+                controllerConfig.description || updatedMetadata.description,
+            };
+
+            console.log(`Updating controller IP from ${oldIp} to ${newIp}`);
+
+            // Check if this controller is connected
+            const isConnected = controllers.find(
+              (c) => c.id === activeFile.id
+            )?.isConnected;
+
+            // If connected, disconnect and reconnect with the new IP
+            if (isConnected) {
+              toast.info(
+                `Reconnecting to ${activeFile.name} with new IP: ${newIp}`
+              );
+
+              // Update controller in WebSocket context
+              addController(activeFile.id, activeFile.name, newIp);
+
+              // Disconnect first
+              disconnect(activeFile.id);
+
+              // Reconnect with new IP after a short delay
+              setTimeout(() => {
+                connect(activeFile.id);
+              }, 500);
+            } else {
+              // Just update the controller in WebSocket context
+              addController(activeFile.id, activeFile.name, newIp);
+            }
+          }
+        } catch (error) {
+          console.error('Error parsing controller configuration:', error);
+          toast.error(
+            'Failed to update controller configuration. Invalid JSON format.'
+          );
+        }
+      }
 
       // Update the file content in our state
       setFiles((prevFiles) => {
         const updateFileContent = (nodes: FileNode[]): FileNode[] => {
           return nodes.map((node) => {
             if (node.id === activeFileId) {
-              return { ...node, content: currentContent };
+              return {
+                ...node,
+                content: currentContent,
+                // If this is a controller file, also update the metadata
+                ...(isControllerFile && { metadata: updatedMetadata }),
+              };
             }
             if (node.children) {
               return {
@@ -1065,7 +1312,14 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       // Also update in open files
       setOpenFiles((prevOpenFiles) =>
         prevOpenFiles.map((file) =>
-          file.id === activeFileId ? { ...file, content: currentContent } : file
+          file.id === activeFileId
+            ? {
+                ...file,
+                content: currentContent,
+                // If this is a controller file, also update the metadata
+                ...(isControllerFile && { metadata: updatedMetadata }),
+              }
+            : file
         )
       );
 
@@ -1080,8 +1334,20 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       if (unsavedFileIds.size <= 1) {
         setHasUnsavedChanges(false);
       }
+
+      // Display a toast to confirm save
+      toast.success(`File saved: ${activeFile?.name}`);
     }
-  }, [activeFileId, editorRef, unsavedFileIds]);
+  }, [
+    activeFileId,
+    editorRef,
+    unsavedFileIds,
+    openFiles,
+    controllers,
+    disconnect,
+    connect,
+    addController,
+  ]);
 
   // Handle deploying to a specific controller
   const handleDeployToController = (node: FileNode) => {
@@ -1624,6 +1890,67 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     }
   };
 
+  // Register controllers with WebSocketContext when component mounts
+  useEffect(() => {
+    if (files) {
+      // Keep track of registered controllers to prevent redundant registrations
+      const registeredControllers = new Set();
+
+      // Find all controller nodes in the files array
+      const findControllers = (nodes: FileNode[]) => {
+        nodes.forEach((node) => {
+          if (node.nodeType === 'controller' && node.id && node.metadata?.ip) {
+            // Only register if we haven't registered this controller already
+            const controllerKey = `${node.id}-${node.metadata.ip}`;
+            if (!registeredControllers.has(controllerKey)) {
+              registeredControllers.add(controllerKey);
+              addController(node.id, node.name, node.metadata.ip);
+            }
+          }
+
+          if (node.children) {
+            findControllers(node.children);
+          }
+        });
+      };
+
+      findControllers(files);
+    }
+  }, [files]); // Remove addController from dependencies to prevent infinite loop
+
+  // Add a new handler for viewing controller status
+  const handleViewControllerStatus = (node: FileNode) => {
+    console.log('Viewing status for controller:', node.name);
+
+    // Create a special tab for viewing controller status
+    const statusTabId = `status-${node.id}`;
+
+    // Check if the tab is already open
+    const existingTab = openFiles.find((file) => file.id === statusTabId);
+    if (existingTab) {
+      // If already open, just set it as active
+      setActiveFileId(statusTabId);
+      return;
+    }
+
+    // Create a new status tab for this controller
+    const statusTab: FileNode = {
+      id: statusTabId,
+      name: node.name,
+      path: node.path,
+      isFolder: false,
+      children: [],
+      nodeType: 'status', // Mark this as a status node
+      metadata: node.metadata, // Preserve the controller metadata
+    };
+
+    // Add to open files
+    setOpenFiles((prev) => [...prev, statusTab]);
+
+    // Set as active
+    setActiveFileId(statusTabId);
+  };
+
   return (
     <div className="flex flex-col h-full">
       <CommandBar
@@ -1668,8 +1995,6 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
             }
           }
         }}
-        onToggleConnection={handleToggleConnection}
-        isConnected={connected}
         hasUnsavedChanges={hasUnsavedChanges}
         isDeploying={isDeploying}
       />
@@ -1690,6 +2015,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
             onDeploy={handleDeployToController}
             onAddController={handleAddController}
             onOpenTrends={handleOpenTrends}
+            onViewControllerStatus={handleViewControllerStatus}
           />
         </Resizable>
 
@@ -1726,6 +2052,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
                 tabType={
                   file.nodeType === 'trends'
                     ? 'trends'
+                    : file.nodeType === 'status'
+                    ? 'status'
                     : file.nodeType === 'controller'
                     ? 'file'
                     : 'file'
@@ -1736,19 +2064,23 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           <div className="flex-1 h-full">
             {activeFile?.nodeType === 'trends' ? (
               <TrendsTab file={activeFile} />
+            ) : activeFile?.nodeType === 'status' ? (
+              <StatusScreen file={activeFile} />
             ) : (
-              <Editor
-                height="calc(100vh - 6rem)"
-                defaultLanguage="plaintext"
-                theme={monacoTheme}
-                onMount={handleEditorDidMount}
-                options={{
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  fontSize: 14,
-                  wordWrap: 'on',
-                }}
-              />
+              <EditorErrorBoundary>
+                <Editor
+                  height="calc(100vh - 6rem)"
+                  defaultLanguage="plaintext"
+                  theme={monacoTheme}
+                  onMount={handleEditorDidMount}
+                  options={{
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 14,
+                    wordWrap: 'on',
+                  }}
+                />
+              </EditorErrorBoundary>
             )}
           </div>
         </div>

@@ -11,6 +11,7 @@ import {
   Server,
 } from 'lucide-react';
 import React, { useState } from 'react';
+import { useWebSocket } from '../context/WebSocketContext';
 import ContextMenu from '../ContextMenu';
 import { FileNode } from '../types';
 
@@ -20,10 +21,11 @@ interface FilesTabProps {
   selectedFileId: string | null;
   onAddFile: (parentNode: FileNode | null, isFolder: boolean) => void;
   onDeleteFile: (node: FileNode) => void;
-  onDeploy: (node: FileNode) => void;
+  onDeploy?: (node: FileNode) => void;
   onAddController?: () => void;
   onOpenVariableMonitor?: (node: FileNode) => void;
   onOpenTrends?: (node: FileNode) => void;
+  onViewControllerStatus?: (node: FileNode) => void;
 }
 
 export default function FilesTab({
@@ -36,7 +38,10 @@ export default function FilesTab({
   onAddController,
   onOpenVariableMonitor,
   onOpenTrends,
+  onViewControllerStatus,
 }: FilesTabProps) {
+  const { connect, disconnect, getControllerStatus, addController } =
+    useWebSocket();
   const [contextMenu, setContextMenu] = useState({
     show: false,
     node: null as FileNode | null,
@@ -73,6 +78,33 @@ export default function FilesTab({
     setContextMenu((prev) => ({ ...prev, show: false }));
   };
 
+  // Handler for connecting to a controller
+  const handleConnectController = (node: FileNode) => {
+    if (node.nodeType === 'controller' && node.id) {
+      // If the controller is not in the WebSocket context, add it
+      if (node.metadata?.ip) {
+        addController(node.id, node.name, node.metadata.ip);
+      }
+
+      // Connect to the controller
+      connect(node.id);
+    }
+  };
+
+  // Handler for disconnecting from a controller
+  const handleDisconnectController = (node: FileNode) => {
+    if (node.nodeType === 'controller' && node.id) {
+      disconnect(node.id);
+    }
+  };
+
+  // Handler for viewing controller status
+  const handleViewControllerStatus = (node: FileNode) => {
+    if (node.nodeType === 'controller' && onViewControllerStatus) {
+      onViewControllerStatus(node);
+    }
+  };
+
   return (
     <>
       <div className="" onContextMenu={handleBackgroundContextMenu}>
@@ -104,16 +136,19 @@ export default function FilesTab({
             )}
           </div>
         </div>
-        {files.map((file) => (
-          <TreeNode
-            key={file.id}
-            node={file}
-            level={0}
-            onSelectFile={onSelectFile}
-            selectedFileId={selectedFileId}
-            onContextMenu={handleContextMenu}
-          />
-        ))}
+        <div className="p-2 overflow-auto">
+          {files.map((node) => (
+            <TreeNode
+              key={node.id}
+              node={node}
+              level={0}
+              onSelectFile={onSelectFile}
+              selectedFileId={selectedFileId}
+              onContextMenu={handleContextMenu}
+              getControllerStatus={getControllerStatus}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Render the context menu separately */}
@@ -129,10 +164,13 @@ export default function FilesTab({
         }
         onAddFile={onAddFile}
         onDelete={onDeleteFile}
-        onClose={closeContextMenu}
         onDeploy={onDeploy}
         onOpenVariableMonitor={onOpenVariableMonitor}
         onOpenTrends={onOpenTrends}
+        onConnectController={handleConnectController}
+        onDisconnectController={handleDisconnectController}
+        onViewControllerStatus={handleViewControllerStatus}
+        onClose={closeContextMenu}
       >
         <></>
       </ContextMenu>
@@ -146,6 +184,7 @@ interface TreeNodeProps {
   onSelectFile: (node: FileNode) => void;
   selectedFileId: string | null;
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
+  getControllerStatus: (controllerId: string) => boolean;
 }
 
 // TreeNode Component
@@ -155,6 +194,7 @@ export function TreeNode({
   onSelectFile,
   selectedFileId,
   onContextMenu,
+  getControllerStatus,
 }: TreeNodeProps) {
   const [isOpen, setIsOpen] = useState(
     node.nodeType === 'heading' ? true : false
@@ -183,19 +223,27 @@ export function TreeNode({
     onContextMenu(e, node);
   };
 
-  // Helper function to get the appropriate icon for heading nodes
+  // Function to get the icon based on node type
   const getHeadingIcon = () => {
-    switch (node.name) {
-      case 'Devices':
-        return <Server className="h-4 w-4 text-zinc-500" />;
-      case 'Logic':
-        return <Code className="h-4 w-4 text-zinc-500" />;
-      case 'Control':
-        return <Layout className="h-4 w-4 text-zinc-500" />;
-      default:
-        return <Folder className="h-4 w-4 text-blue-600" />;
+    if (node.nodeType === 'heading') {
+      switch (node.name) {
+        case 'Devices':
+          return <Server className="h-4 w-4 text-zinc-500" />;
+        case 'Logic':
+          return <Code className="h-4 w-4 text-zinc-500" />;
+        case 'Control':
+          return <Layout className="h-4 w-4 text-zinc-500" />;
+        default:
+          return <Folder className="h-4 w-4 text-blue-600" />;
+      }
     }
+    return null;
   };
+
+  // Check if this node is a controller and if it's connected
+  const isController = node.nodeType === 'controller';
+  const isConnected =
+    isController && node.id ? getControllerStatus(node.id) : false;
 
   return (
     <div>
@@ -247,8 +295,8 @@ export function TreeNode({
           </span>
         )}
         {node.nodeType === 'controller' && (
-          <span className="ml-5 mr-2">
-            <div className="size-2 rounded-full bg-green-500" title="Online" />
+          <span className="ml-5 mr-1">
+            <Server className="h-4 w-4 text-purple-500" />
           </span>
         )}
         {!node.isFolder && node.nodeType !== 'controller' && (
@@ -262,6 +310,16 @@ export function TreeNode({
             ({node.metadata.ip}, v{node.metadata.version})
           </span>
         )}
+
+        {/* Add connection indicator for controllers */}
+        {isController && (
+          <div
+            className={`ml-2 h-2 w-2 rounded-full ${
+              isConnected ? 'bg-green-500' : 'bg-red-500'
+            }`}
+            title={isConnected ? 'Connected' : 'Disconnected'}
+          />
+        )}
       </div>
       {node.isFolder && isOpen && node.children && (
         <div>
@@ -273,6 +331,7 @@ export function TreeNode({
               onSelectFile={onSelectFile}
               selectedFileId={selectedFileId}
               onContextMenu={onContextMenu}
+              getControllerStatus={getControllerStatus}
             />
           ))}
         </div>

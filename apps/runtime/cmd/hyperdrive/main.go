@@ -32,8 +32,8 @@ func main() {
 	// Initialize WebSocket server
 	ws := websocket.NewServer(rt)
 	go func() {
-		log.Println("Starting WebSocket and HTTP server on :3000")
-		if err := ws.Start(":3000"); err != nil {
+		log.Println("Starting WebSocket and HTTP server on :4444")
+		if err := ws.Start(":4444"); err != nil {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()

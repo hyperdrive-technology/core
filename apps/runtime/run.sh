@@ -18,5 +18,5 @@ if [ $? -ne 0 ]; then
 fi
 
 # Run the runtime
-echo "Starting hyperdrive runtime on http://localhost:3000"
+echo "Starting hyperdrive runtime on http://localhost:4444"
 ./bin/hyperdrive

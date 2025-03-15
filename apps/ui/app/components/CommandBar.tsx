@@ -1,11 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Plug, Power, Upload } from 'lucide-react';
+import { useWebSocket } from './context/WebSocketContext';
 
 export interface CommandBarProps {
   projectName: string;
   onDeploy: () => void;
-  onToggleConnection: () => void;
-  isConnected: boolean;
   hasUnsavedChanges: boolean;
   isDeploying?: boolean;
 }
@@ -13,10 +12,29 @@ export interface CommandBarProps {
 export const CommandBar = ({
   projectName,
   onDeploy,
-  onToggleConnection,
-  isConnected,
   hasUnsavedChanges,
+  isDeploying,
 }: CommandBarProps) => {
+  const { isConnected, connect, disconnect, controllers } = useWebSocket();
+
+  const handleToggleConnection = () => {
+    if (isConnected) {
+      disconnect(); // Disconnect from all controllers
+    } else {
+      connect(); // Connect to all controllers
+    }
+  };
+
+  const connectedCount = controllers.filter((c) => c.isConnected).length;
+  const totalControllers = controllers.length;
+
+  const connectionStatus =
+    totalControllers > 0
+      ? `${connectedCount}/${totalControllers} connected`
+      : isConnected
+      ? 'Connected'
+      : 'Disconnected';
+
   return (
     <div className="flex items-center justify-between p-2 border-b dark:border-gray-700  dark:bg-gray-900">
       <div />
@@ -37,7 +55,7 @@ export const CommandBar = ({
           variant="outline"
           size="sm"
           onClick={onDeploy}
-          disabled={!isConnected}
+          disabled={!isConnected || isDeploying}
           title="Deploy to Runtime (Ctrl+Shift+D)"
           className="flex items-center"
         >
@@ -47,8 +65,12 @@ export const CommandBar = ({
         <Button
           variant={isConnected ? 'default' : 'outline'}
           size="sm"
-          onClick={onToggleConnection}
-          title={isConnected ? 'Disconnect from Runtime' : 'Connect to Runtime'}
+          onClick={handleToggleConnection}
+          title={
+            isConnected
+              ? 'Disconnect from All Controllers'
+              : 'Connect to All Controllers'
+          }
           className={`flex items-center ${
             isConnected ? 'bg-green-600 hover:bg-green-700' : ''
           }`}
@@ -57,11 +79,19 @@ export const CommandBar = ({
             <>
               <Power className="h-4 w-4 mr-1" />
               Disconnect
+              {totalControllers > 0 && (
+                <span className="ml-1 text-xs">
+                  ({connectedCount}/{totalControllers})
+                </span>
+              )}
             </>
           ) : (
             <>
               <Plug className="h-4 w-4 mr-1" />
               Connect
+              {totalControllers > 0 && (
+                <span className="ml-1 text-xs">({totalControllers})</span>
+              )}
             </>
           )}
         </Button>

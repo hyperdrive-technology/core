@@ -5,6 +5,7 @@ import {
   Outlet,
   Scripts,
 } from '@tanstack/react-router';
+import { Toaster } from 'sonner';
 
 import WebSocketProvider from '@/components/context/WebSocketContext';
 import { ThemeProvider } from '@/components/ui/theme-provider';
@@ -63,6 +64,7 @@ function RootDocument() {
         <ThemeProvider defaultTheme="light" storageKey="hyperdrive-ui-theme">
           <WebSocketProvider>
             <Outlet />
+            <Toaster position="top-right" richColors closeButton />
           </WebSocketProvider>
         </ThemeProvider>
         <Scripts />

@@ -1,8 +1,8 @@
-import { Activity, Database, X } from 'lucide-react';
+import { Activity, Database, Server, X } from 'lucide-react';
 import React from 'react';
 import { FileNode } from './types';
 
-export type TabType = 'file' | 'variables' | 'trends';
+export type TabType = 'file' | 'variables' | 'trends' | 'status';
 
 interface EditorTabProps {
   file: FileNode;
@@ -36,6 +36,8 @@ export default function EditorTab({
         return <Database className="h-3 w-3 mr-1" />;
       case 'trends':
         return <Activity className="h-3 w-3 mr-1" />;
+      case 'status':
+        return <Server className="h-3 w-3 mr-1" />;
       default:
         return null;
     }
@@ -48,6 +50,8 @@ export default function EditorTab({
         return `Variables: ${file.name}`;
       case 'trends':
         return `Trends: ${file.name}`;
+      case 'status':
+        return `Status: ${file.name}`;
       default:
         return file.name;
     }

@@ -5,11 +5,12 @@ export interface FileNode {
   isFolder: boolean;
   children?: FileNode[];
   content?: string;
-  nodeType?: 'heading' | 'controller' | 'file' | 'folder' | 'trends';
+  nodeType?: 'heading' | 'controller' | 'file' | 'folder' | 'trends' | 'status';
   metadata?: {
     ip?: string;
     version?: string;
     description?: string;
     [key: string]: any;
   };
+  path?: string; // Add path property which might be needed for some node types
 }

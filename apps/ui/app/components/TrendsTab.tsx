@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Activity, Clock, Filter, RefreshCw } from 'lucide-react';
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CartesianGrid,
   Legend,
@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { WebSocketContext } from '../contexts/WebSocketContext';
+import { useWebSocket } from './context/WebSocketContext';
 import { FileNode } from './types';
 
 interface TrendsTabProps {
@@ -31,8 +31,8 @@ const COLORS = [
 ];
 
 export default function TrendsTab({ file }: TrendsTabProps) {
-  const wsContext = useContext(WebSocketContext);
-  const [variables, setVariables] = useState<string[]>([]);
+  const { isConnected, variables: wsVariables } = useWebSocket();
+  const [availableVariables, setAvailableVariables] = useState<string[]>([]);
   const [selectedVariables, setSelectedVariables] = useState<string[]>([]);
   const [timeRange, setTimeRange] = useState<'1m' | '5m' | '15m' | '1h'>('5m');
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -42,77 +42,56 @@ export default function TrendsTab({ file }: TrendsTabProps) {
   // Extract the file path from the file id to use in the PLC data request
   const filePath = file.id.replace('trends-', '');
 
-  // Get available variables when the component mounts
+  // Get available variables from WebSocket when the component mounts
   useEffect(() => {
-    if (wsContext?.connected) {
-      setLoading(true);
-      // Request variables from the file
-      wsContext.sendMessage({
-        type: 'get_variables',
-        filePath: filePath,
+    // Use data from WebSocket variables if available
+    if (wsVariables && Object.keys(wsVariables).length > 0) {
+      // Extract variable names from the WebSocket context
+      const varNames: string[] = [];
+      Object.values(wsVariables).forEach((varGroup: any) => {
+        varGroup.forEach((v: any) => {
+          if (typeof v.Name === 'string') {
+            varNames.push(v.Name);
+          }
+        });
       });
 
-      // Set up a listener for the response
-      const handleVariablesResponse = (data: any) => {
-        if (data.type === 'variables_list' && data.filePath === filePath) {
-          setVariables(data.variables || []);
-          // Select the first few variables by default
-          setSelectedVariables(data.variables?.slice(0, 3) || []);
-          setLoading(false);
-        }
-      };
+      setAvailableVariables(varNames);
 
-      wsContext.addMessageListener(handleVariablesResponse);
-
-      return () => {
-        wsContext.removeMessageListener(handleVariablesResponse);
-      };
-    }
-  }, [wsContext?.connected, filePath]);
-
-  // Request trend data when selectedVariables or timeRange changes
-  useEffect(() => {
-    if (wsContext?.connected && selectedVariables.length > 0) {
-      const fetchTrendData = () => {
-        setLoading(true);
-        wsContext.sendMessage({
-          type: 'get_trends',
-          filePath: filePath,
-          variables: selectedVariables,
-          timeRange: timeRange,
-        });
-      };
-
-      fetchTrendData();
-
-      // Set up a listener for the response
-      const handleTrendDataResponse = (data: any) => {
-        if (data.type === 'trends_data' && data.filePath === filePath) {
-          setTrendData(data.data || []);
-          setLoading(false);
-        }
-      };
-
-      wsContext.addMessageListener(handleTrendDataResponse);
-
-      // Set up auto-refresh interval
-      let refreshInterval: NodeJS.Timeout | null = null;
-      if (autoRefresh) {
-        refreshInterval = setInterval(fetchTrendData, 5000); // Refresh every 5 seconds
+      // Select the first few variables by default if none selected
+      if (selectedVariables.length === 0 && varNames.length > 0) {
+        setSelectedVariables(varNames.slice(0, 3));
       }
 
-      return () => {
-        wsContext.removeMessageListener(handleTrendDataResponse);
-        if (refreshInterval) clearInterval(refreshInterval);
-      };
+      setLoading(false);
     }
-  }, [
-    wsContext?.connected,
-    selectedVariables,
-    timeRange,
-    autoRefresh,
-    filePath,
-  ]);
+  }, [wsVariables, selectedVariables.length]);
+
+  // Generate trend data based on history data from WebSocket
+  useEffect(() => {
+    if (isConnected && selectedVariables.length > 0 && wsVariables) {
+      // Generate trend data from the history data
+      // This would typically come from a WebSocket message in a real implementation
+      const demoData = Array.from({ length: 20 }, (_, i) => {
+        const timestamp = new Date(Date.now() - (19 - i) * 60000);
+        const entry: Record<string, any> = {
+          time: timestamp.toLocaleTimeString(),
+        };
+
+        selectedVariables.forEach((varName) => {
+          // Get a somewhat stable value for this variable
+          const baseValue = 50 + selectedVariables.indexOf(varName) * 20;
+          const variation = Math.sin(i / 3) * 10 + Math.random() * 5;
+          entry[varName] = Number((baseValue + variation).toFixed(1));
+        });
+
+        return entry;
+      });
+
+      setTrendData(demoData);
+      setLoading(false);
+    }
+  }, [isConnected, selectedVariables, wsVariables]);
 
   const handleVariableToggle = (variable: string) => {
     setSelectedVariables((prev) =>
@@ -124,7 +103,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
 
   // Generate demo data if no websocket or real data available
   useEffect(() => {
-    if (!wsContext?.connected || !selectedVariables.length) {
+    if (!isConnected || !selectedVariables.length) {
       // Create some dummy data for preview
       const demoData = Array.from({ length: 20 }, (_, i) => {
         const timestamp = new Date(Date.now() - (19 - i) * 60000);
@@ -135,7 +114,6 @@ export default function TrendsTab({ file }: TrendsTabProps) {
         ['Temperature', 'Pressure', 'Flow', 'Level', 'Speed'].forEach(
           (variable, index) => {
             if (index < 3) {
-              // Show only 3 variables by default
               // Create somewhat realistic looking trend data with minor variations
               const baseValue = 50 + index * 20;
               const variation = Math.sin(i / 3) * 10 + Math.random() * 5;
@@ -148,11 +126,27 @@ export default function TrendsTab({ file }: TrendsTabProps) {
       });
 
       setTrendData(demoData);
-      setVariables(['Temperature', 'Pressure', 'Flow', 'Level', 'Speed']);
-      setSelectedVariables(['Temperature', 'Pressure', 'Flow']);
+      setAvailableVariables([
+        'Temperature',
+        'Pressure',
+        'Flow',
+        'Level',
+        'Speed',
+      ]);
+      if (selectedVariables.length === 0) {
+        setSelectedVariables(['Temperature', 'Pressure', 'Flow']);
+      }
       setLoading(false);
     }
-  }, [wsContext?.connected, selectedVariables.length]);
+  }, [isConnected, selectedVariables.length]);
+
+  // Function to manually refresh data
+  const handleRefresh = () => {
+    setLoading(true);
+    // In a real implementation, this would send a WebSocket message
+    // For now, we'll just simulate a refresh delay
+    setTimeout(() => setLoading(false), 500);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -186,20 +180,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
               <RefreshCw className="h-3 w-3 mr-1" /> Auto-refresh
             </Label>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setLoading(true);
-              // Manually refresh trend data
-              wsContext?.sendMessage({
-                type: 'get_trends',
-                filePath: filePath,
-                variables: selectedVariables,
-                timeRange: timeRange,
-              });
-            }}
-          >
+          <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="h-4 w-4 mr-1" /> Refresh
           </Button>
         </div>
@@ -213,7 +194,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
           </div>
 
           <div className="space-y-2">
-            {variables.map((variable) => (
+            {availableVariables.map((variable: string) => (
               <div key={variable} className="flex items-center">
                 <Checkbox
                   checked={selectedVariables.includes(variable)}

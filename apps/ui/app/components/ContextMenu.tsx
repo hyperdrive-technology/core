@@ -1,14 +1,16 @@
 import {
   Activity,
   Database,
-  ExternalLink,
   FilePlus,
   FolderPlus,
+  Plug,
+  Power,
   Server,
   Trash2,
   Upload,
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { useWebSocket } from './context/WebSocketContext';
 import { FileNode } from './types';
 
 interface ContextMenuProps {
@@ -22,6 +24,9 @@ interface ContextMenuProps {
   onDeploy?: (node: FileNode) => void;
   onOpenVariableMonitor?: (node: FileNode) => void;
   onOpenTrends?: (node: FileNode) => void;
+  onConnectController?: (node: FileNode) => void;
+  onDisconnectController?: (node: FileNode) => void;
+  onViewControllerStatus?: (node: FileNode) => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -35,7 +40,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onDeploy,
   onOpenVariableMonitor,
   onOpenTrends,
+  onConnectController,
+  onDisconnectController,
+  onViewControllerStatus,
 }) => {
+  const { getControllerStatus } = useWebSocket();
   // Track context menu position
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isOpen, setIsOpen] = useState(false);
@@ -118,8 +127,37 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     }
   };
 
+  const handleConnectController = () => {
+    console.log('Connect controller clicked for:', node?.name);
+    if (node && onConnectController) {
+      onConnectController(node);
+      onClose();
+    }
+  };
+
+  const handleDisconnectController = () => {
+    console.log('Disconnect controller clicked for:', node?.name);
+    if (node && onDisconnectController) {
+      onDisconnectController(node);
+      onClose();
+    }
+  };
+
+  // Add a new handler for viewing controller status
+  const handleViewControllerStatus = () => {
+    console.log('View controller status clicked for:', node?.name);
+    if (node && onViewControllerStatus) {
+      onViewControllerStatus(node);
+      onClose();
+    }
+  };
+
   // Check if the node is a controller
   const isController = node?.nodeType === 'controller';
+
+  // Check if the controller is connected
+  const isControllerConnected =
+    isController && node?.id ? getControllerStatus(node.id) : false;
 
   // Check if the node is a heading section
   const isHeading = node?.nodeType === 'heading';
@@ -144,17 +182,36 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             {/* Controller-specific options */}
             {isController && (
               <>
+                {isControllerConnected ? (
+                  <button
+                    onClick={handleDisconnectController}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    <Power className="h-4 w-4" />
+                    <span>Disconnect</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleConnectController}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    <Plug className="h-4 w-4" />
+                    <span>Connect</span>
+                  </button>
+                )}
+
                 <button
-                  onClick={handleViewStatus}
+                  onClick={handleViewControllerStatus}
                   className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
-                  <ExternalLink className="h-4 w-4" />
+                  <Server className="h-4 w-4" />
                   <span>View Status</span>
                 </button>
 
                 <button
                   onClick={handleDeploy}
-                  className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                  className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                  disabled={!isControllerConnected}
                 >
                   <Upload className="h-4 w-4" />
                   <span>Deploy</span>
