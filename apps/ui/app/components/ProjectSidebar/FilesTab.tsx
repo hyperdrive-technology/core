@@ -314,7 +314,7 @@ export function TreeNode({
         {/* Add connection indicator for controllers */}
         {isController && (
           <div
-            className={`ml-2 h-2 w-2 rounded-full ${
+            className={`ml-2 size-2 flex-shrink-0 rounded-full ${
               isConnected ? 'bg-green-500' : 'bg-red-500'
             }`}
             title={isConnected ? 'Connected' : 'Disconnected'}

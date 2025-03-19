@@ -32,6 +32,9 @@ function EditorPage() {
   const [projectFiles, setProjectFiles] = useState<FileNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [logicFiles, setLogicFiles] = useState<
+    Array<{ fileName: string; content: string }>
+  >([]);
 
   // Load the example project files
   useEffect(() => {
@@ -133,6 +136,32 @@ function EditorPage() {
               children: logicDir?.children || [],
             });
 
+            // Extract logic files (ST files) for our compiler
+            if (logicDir?.children) {
+              const stFiles: Array<{ fileName: string; content: string }> = [];
+
+              // Recursive function to collect all ST files
+              const collectSTFiles = (nodes: FileNode[]) => {
+                for (const node of nodes) {
+                  if (node.isFolder && node.children) {
+                    collectSTFiles(node.children);
+                  } else if (
+                    !node.isFolder &&
+                    node.name.toLowerCase().endsWith('.st')
+                  ) {
+                    stFiles.push({
+                      fileName: node.name,
+                      content: node.content || '',
+                    });
+                  }
+                }
+              };
+
+              collectSTFiles(logicDir.children);
+              setLogicFiles(stFiles);
+              console.log('📁 LOGIC FILES LOADED:', stFiles);
+            }
+
             // Add the Control section
             structuredProject.push({
               id: 'control-section',
@@ -199,12 +228,17 @@ export default function Dashboard() {
           </div>
         </div>
       ) : (
-        <MonacoEditor
-          initialFiles={projectFiles.length > 0 ? projectFiles : undefined}
-          projectName={
-            projectName || (projectId === 'example-1' ? 'Example 1' : undefined)
-          }
-        />
+        <div className="flex flex-col">
+          <div className="flex-grow">
+            <MonacoEditor
+              initialFiles={projectFiles.length > 0 ? projectFiles : undefined}
+              projectName={
+                projectName ||
+                (projectId === 'example-1' ? 'Example 1' : undefined)
+              }
+            />
+          </div>
+        </div>
       )}
     </div>
   );

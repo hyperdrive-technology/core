@@ -1,10 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import Editor, { Monaco, OnMount } from '@monaco-editor/react';
+import { Editor, Monaco, OnMount } from '@monaco-editor/react';
 import { ChevronLeft, ChevronRight, File, X } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { Resizable } from 're-resizable';
-import {
+import React, {
   Component,
   ReactNode,
   useCallback,
@@ -13,11 +13,15 @@ import {
   useState,
 } from 'react';
 import { toast } from 'sonner';
+import { useIECCompiler } from '../hooks/useIECCompiler';
 import {
   IEC61131_LANGUAGE_ID,
   registerIEC61131Language,
 } from '../server/iec61131/language-service';
+import { IECFile } from '../utils/iec-file-loader';
+import BreadcrumbPath from './BreadcrumbPath';
 import { CommandBar } from './CommandBar';
+import { CompilePanel } from './CompilePanel';
 import { useWebSocket } from './context/WebSocketContext';
 import { TabType } from './EditorTab';
 import NewFileDialog from './NewFileDialog';
@@ -112,11 +116,60 @@ interface MonacoEditorProps {
 }
 
 const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
-  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const monacoRef = useRef<Monaco | null>(null);
-  const [files, setFiles] = useState<FileNode[]>(initialFiles ?? []);
+  // All state variables should be defined at the top
+  const [files, setFiles] = useState<FileNode[]>(initialFiles || []);
   const [openFiles, setOpenFiles] = useState<FileNode[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [connected] = useState(false);
+  const [iecFiles, setIecFiles] = useState<IECFile[]>([]);
+
+  const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [isCompiling, setIsCompiling] = useState(false);
+  const [compilationResult, setCompilationResult] = useState<{
+    success: boolean;
+    error?: string;
+  } | null>(null);
+
+  // Add a state for tracking the current project/folder
+  // Use provided projectName from props if available, otherwise default
+  const [currentProjectName, setCurrentProjectName] = useState<string>(
+    projectName || 'Hyperdrive Project'
+  );
+
+  // IEC Compiler hook - moved to top of component
+  const {
+    compile,
+    result: compilerResult,
+    status: compilerStatus,
+    error: compilerError,
+  } = useIECCompiler();
+
+  // Log compiler initialization
+  useEffect(() => {
+    console.log('IEC Compiler hook initialized, status:', compilerStatus);
+  }, []);
+
+  // Ensure a stable reference to compile function
+  const safeCompile = useCallback(
+    (files: IECFile[]) => {
+      console.log('Safely compiling files:', files.length);
+      try {
+        compile(files);
+      } catch (err) {
+        console.error('Error calling compile function:', err);
+        setIsCompiling(false);
+        setCompilationResult({
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    [compile]
+  );
+
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
   const [editorReady, setEditorReady] = useState(false);
 
   // Dialog states
@@ -134,18 +187,9 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   // Navigation history state
   const [navHistory, setNavHistory] = useState<string[]>([]);
   const [navPosition, setNavPosition] = useState(-1);
-  const [connected, setConnected] = useState(false);
 
   // State for tracking unsaved changes
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  // State for tracking which files have unsaved changes
-  const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
-
-  // Add a state for tracking the current project/folder
-  // Use provided projectName from props if available, otherwise default
-  const [currentProjectName, setCurrentProjectName] = useState<string>(
-    projectName || 'Hyperdrive Project'
-  );
 
   // Keep a reference to whether we have a prop-provided project name
   const hasProjectNameProp = useRef(!!projectName);
@@ -452,11 +496,9 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     monaco.editor.setTheme(monacoTheme);
 
     // Register the IEC61131 language (Structured Text)
-    let languageRegistered = false;
     try {
       console.log('Registering IEC61131 language...');
       registerIEC61131Language(monaco);
-      languageRegistered = true;
       console.log('IEC61131 language registered successfully');
     } catch (error) {
       console.error('Error registering IEC61131 language:', error);
@@ -1372,12 +1414,6 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     }
   };
 
-  // Toggle connection to runtime
-  const handleToggleConnection = useCallback(() => {
-    // In a real implementation, this would connect to or disconnect from the runtime
-    setConnected((prevConnected) => !prevConnected);
-  }, [connected]);
-
   // Handle tab click
   const handleTabClick = (fileId: string) => {
     const file = openFiles.find((f) => f.id === fileId);
@@ -1792,83 +1828,309 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     activeFile,
   ]);
 
-  // Helper function to format project name
-  const formatProjectName = (name: string | null): string => {
-    if (!name) return 'Hyperdrive Project';
+  // Find all ST files under the Logic section (renamed from Control)
+  const findAllSTFiles = useCallback(() => {
+    // Debug the file structure to see what we're working with
+    console.log('Available files:', files);
 
-    // Convert from kebab-case or snake_case to Title Case
-    return name
-      .replace(/[-_]/g, ' ') // Replace dashes and underscores with spaces
-      .split(' ')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  };
+    // Be more flexible in finding logic-related sections
+    let logicSection = files.find(
+      (node) =>
+        node.name?.toLowerCase() === 'logic' ||
+        node.id?.toLowerCase() === 'logic-section' ||
+        node.id?.toLowerCase()?.includes('logic') ||
+        node.name?.toLowerCase()?.includes('logic')
+    );
 
-  // Get the AST for the current file
-  const getAst = useCallback(() => {
-    if (!editorRef.current || !monacoRef.current || !activeFile) {
-      return null;
-    }
+    // If we're looking at example-2, the structure might be different
+    if (!logicSection) {
+      // Look for any node that might contain example-2 in the id or name
+      const example2Node = files.find(
+        (node) =>
+          node.id?.toLowerCase()?.includes('example-2') ||
+          node.name?.toLowerCase()?.includes('example-2')
+      );
 
-    // Try to get the langium services
-    try {
-      const model = editorRef.current.getModel();
-      if (!model || model.getLanguageId() !== IEC61131_LANGUAGE_ID) {
-        console.error('Not an IEC-61131 file');
-        return null;
-      }
+      if (example2Node) {
+        console.log('Found example-2 node:', example2Node);
+        // If we found an example-2 node, it might be the root or container
+        if (example2Node.children && example2Node.children.length > 0) {
+          // First, see if there's a logic folder in its children
+          logicSection = example2Node.children.find(
+            (child) =>
+              child.name?.toLowerCase() === 'logic' ||
+              child.id?.toLowerCase()?.includes('logic')
+          );
 
-      // Get the document content
-      const content = model.getValue();
+          // If still not found, check if the example-2 node itself has ST files
+          if (!logicSection) {
+            const stFilesInExample2: FileNode[] = [];
+            const collectSTFiles = (node: FileNode) => {
+              if (!node.isFolder && node.name.toLowerCase().endsWith('.st')) {
+                stFilesInExample2.push(node);
+              }
+              if (node.children) {
+                node.children.forEach(collectSTFiles);
+              }
+            };
 
-      // For simplicity, create a basic AST representing the code structure
-      // This is a placeholder - in a real implementation, you would use
-      // Langium's parsing capabilities to generate a proper AST
-      const ast: any = {
-        type: 'Program',
-        name: activeFile.name.replace(/\.st$/, ''),
-        statements: [],
-        declarations: [] as Array<{
-          type: string;
-          name: string;
-          dataType: string;
-          initialValue?: string;
-        }>,
-        content: content,
-      };
+            collectSTFiles(example2Node);
 
-      // Extract variable declarations using regular expressions
-      // This is a very simplified approach - in a real implementation, use proper parsing
-      const varRegex =
-        /VAR(?:_INPUT|_OUTPUT|_EXTERNAL|_IN_OUT)?\s+(.*?)END_VAR/gs;
-      let varMatch;
-      while ((varMatch = varRegex.exec(content)) !== null) {
-        const varBlockContent = varMatch[1];
-        const varLineRegex = /(\w+)\s*:\s*(\w+)\s*(?::\=\s*([^;]+))?;/g;
-        let varLineMatch;
-        while ((varLineMatch = varLineRegex.exec(varBlockContent)) !== null) {
-          const varName = varLineMatch[1];
-          const varType = varLineMatch[2];
-          const varInitValue = varLineMatch[3];
-
-          ast.declarations.push({
-            type: 'VariableDeclaration',
-            name: varName,
-            dataType: varType,
-            initialValue: varInitValue,
-          });
+            if (stFilesInExample2.length > 0) {
+              console.log(
+                `Found ${stFilesInExample2.length} ST files directly in example-2:`,
+                stFilesInExample2
+              );
+              return stFilesInExample2;
+            }
+          }
         }
       }
-
-      return JSON.stringify(ast);
-    } catch (error) {
-      console.error('Error getting AST:', error);
-      return null;
     }
-  }, [activeFile]);
 
-  // New state for deploying
-  const [isDeploying, setIsDeploying] = useState(false);
+    // If Logic section still not found, let's look for any ST files in the entire tree
+    if (!logicSection) {
+      console.log(
+        'No logic section found. Looking for any ST files in the project...'
+      );
+      console.log(
+        'Dumping the full file tree:',
+        JSON.stringify(files, null, 2)
+      );
+
+      // Look for any ST files in the project
+      const allSTFiles: FileNode[] = [];
+
+      const collectAllSTFiles = (nodes: FileNode[]) => {
+        for (const node of nodes) {
+          // Log each file we're checking to see where the issue might be
+          console.log(
+            `Checking node: ${node.name}, isFolder: ${node.isFolder}, id: ${node.id}`
+          );
+
+          if (!node.isFolder && node.name.toLowerCase().endsWith('.st')) {
+            console.log(`Found ST file: ${node.name}`);
+            allSTFiles.push(node);
+          }
+
+          if (node.children && node.children.length > 0) {
+            console.log(
+              `Checking children of ${node.name} (${node.children.length} children)`
+            );
+            collectAllSTFiles(node.children);
+          }
+        }
+      };
+
+      collectAllSTFiles(files);
+
+      if (allSTFiles.length > 0) {
+        console.log(
+          `Found ${allSTFiles.length} ST files in the project:`,
+          allSTFiles
+        );
+        return allSTFiles;
+      }
+
+      console.error('No ST files found in the entire project');
+      return [];
+    }
+
+    console.log('Found Logic section:', logicSection);
+
+    // Debug: Dump the full Logic section to inspect its structure
+    console.log(
+      'Logic section structure:',
+      JSON.stringify(logicSection, null, 2)
+    );
+
+    if (logicSection.children) {
+      console.log(
+        `Logic has ${logicSection.children.length} children:`,
+        logicSection.children
+      );
+    }
+
+    const stFiles: FileNode[] = [];
+
+    // Recursive function to traverse the file tree
+    const collectSTFiles = (node: FileNode) => {
+      // Log every node we're checking
+      console.log(`Checking for ST: ${node.name}, isFolder: ${node.isFolder}`);
+
+      if (!node.isFolder && node.name.toLowerCase().endsWith('.st')) {
+        console.log(`Found ST file: ${node.name}`);
+        stFiles.push(node);
+      }
+
+      if (node.children && node.children.length > 0) {
+        console.log(
+          `Traversing ${node.children.length} children of ${node.name}`
+        );
+        node.children.forEach(collectSTFiles);
+      }
+    };
+
+    // Start collection from the Logic section
+    if (logicSection.children) {
+      logicSection.children.forEach(collectSTFiles);
+    } else {
+      // If logicSection has no children but is itself an ST file
+      if (
+        !logicSection.isFolder &&
+        logicSection.name.toLowerCase().endsWith('.st')
+      ) {
+        stFiles.push(logicSection);
+      }
+    }
+
+    console.log(`Found ${stFiles.length} ST files under Logic section`);
+    return stFiles;
+  }, [files]);
+
+  // Modified compile function to handle all files under Logic
+  const handleCompile = useCallback(async () => {
+    // Find all ST files under Logic section
+    const stFiles = findAllSTFiles();
+
+    if (stFiles.length === 0) {
+      toast.error('No IEC-61131 files found', {
+        description:
+          'Could not find any .st files in the Logic section. Please ensure there are .st files in your project.',
+      });
+      return false;
+    }
+
+    setIsCompiling(true);
+    setCompilationResult(null);
+
+    // Show notification about what's being compiled
+    toast.info('Compiling code', {
+      description: `Compiling ${stFiles.length} IEC-61131 file(s) in the browser`,
+    });
+
+    try {
+      // Convert FileNodes to IECFiles for the compiler
+      const iecFilesToCompile: IECFile[] = stFiles.map((file) => ({
+        fileName: file.name,
+        content: file.content || '',
+      }));
+
+      // Update the state with these files
+      setIecFiles(iecFilesToCompile);
+
+      // Use our compiler hook to compile in the browser
+      safeCompile(iecFilesToCompile);
+
+      // We'll handle the result in a useEffect that watches compilerResult
+      return true;
+    } catch (error) {
+      console.error('Compilation error:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      setCompilationResult({ success: false, error: errorMessage });
+      toast.error('Compilation failed', {
+        description: errorMessage,
+      });
+      setIsCompiling(false);
+      return false;
+    }
+  }, [findAllSTFiles, toast, safeCompile]);
+
+  // Update iecFiles when files change
+  useEffect(() => {
+    const stFiles = findAllSTFiles();
+    const newIecFiles = stFiles.map((file) => ({
+      fileName: file.name,
+      content: file.content || '',
+    }));
+    setIecFiles(newIecFiles);
+  }, [files, findAllSTFiles]);
+
+  // Add a useEffect to handle compilation results
+  useEffect(() => {
+    // Only run this effect if we have status information from the compiler
+    if (compilerStatus === 'success' || compilerStatus === 'error') {
+      console.log('📋 Compiler status changed:', compilerStatus);
+      console.log('📋 Compiler result:', compilerResult);
+      console.log('📋 Compiler error:', compilerError);
+
+      setIsCompiling(false);
+
+      if (compilerStatus === 'success' && compilerResult?.success) {
+        setCompilationResult({ success: true });
+        // Store the result AST for later deployment
+        if (compilerResult.ast) {
+          console.log('📋 Compilation succeeded with AST:', compilerResult.ast);
+        }
+
+        toast.success('Compilation successful', {
+          description: `Successfully compiled ${compilerResult.fileCount} file(s)`,
+        });
+      } else {
+        setCompilationResult({
+          success: false,
+          error: compilerError || 'Compilation failed with errors',
+        });
+
+        toast.error('Compilation failed', {
+          description: compilerError || 'Check the compile panel for details',
+        });
+      }
+    }
+    // This effect was removed and replaced with the one at the top of the component
+  }, []);
+
+  // Deploy function that compiles first if there are changes
+  const handleDeploy = useCallback(async () => {
+    // If we have unsaved changes, or last compilation failed, compile first
+    if (hasUnsavedChanges || !compilationResult?.success) {
+      const compileSuccess = await handleCompile();
+      if (!compileSuccess) {
+        return; // Don't continue if compilation failed
+      }
+    }
+
+    // Now deploy the compiled code
+    if (compilerResult?.ast) {
+      setIsDeploying(true);
+
+      try {
+        // Deploy the AST to the controller
+        const response = await fetch('http://localhost:3000/api/deploy', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ast: compilerResult.ast }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Deployment failed: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        console.log('Deployment result:', result);
+
+        toast.success('Deployment successful', {
+          description: `Successfully deployed to controller`,
+        });
+      } catch (error) {
+        console.error('Deployment error:', error);
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        toast.error('Deployment failed', {
+          description: errorMessage,
+        });
+      } finally {
+        setIsDeploying(false);
+      }
+    } else {
+      toast.error('No compiled code available', {
+        description: 'Please compile your code first before deploying',
+      });
+    }
+  }, [handleCompile, hasUnsavedChanges, compilationResult, setIsDeploying]);
 
   const handleOpenTrends = (node: FileNode) => {
     // For trends, we'll create a special node with a unique ID
@@ -1951,56 +2213,139 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     setActiveFileId(statusTabId);
   };
 
-  return (
-    <div className="flex flex-col h-full">
-      <CommandBar
-        projectName={currentProjectName}
-        onDeploy={() => {
-          // Get the AST and deploy the code
-          if (activeFile) {
-            const ast = getAst();
-            if (ast) {
-              setIsDeploying(true);
-              fetch('http://localhost:3000/api/deploy', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  ast: ast,
-                  sourceCode: activeFile.content || '',
-                  filePath: activeFile.id,
-                }),
-              })
-                .then((response) => {
-                  if (!response.ok) {
-                    throw new Error('Deployment failed');
-                  }
-                  return response.json();
-                })
-                .then(() => {
-                  toast.success('Deployment successful', {
-                    description: `Code deployed to ${activeFile.id}`,
-                  });
-                })
-                .catch((error) => {
-                  console.error('Deployment error:', error);
-                  toast.error('Deployment failed', {
-                    description: error.message || 'Unknown error',
-                  });
-                })
-                .finally(() => {
-                  setIsDeploying(false);
-                });
+  // Improved function to determine current function name based on cursor position
+  const getCurrentFunctionName = () => {
+    if (!editorRef.current || !activeFile || activeFile.nodeType !== 'file') {
+      return undefined;
+    }
+
+    try {
+      const position = editorRef.current.getPosition();
+      if (!position) return undefined;
+
+      const model = editorRef.current.getModel();
+      if (!model) return undefined;
+
+      // Get the current content and split into lines
+      const content = model.getValue();
+      const lines = content.split('\n');
+
+      // Current line for reference
+      const currentLineNumber = position.lineNumber - 1; // 0-based index
+
+      // Track nesting level to handle nested functions
+      let nestingLevel = 0;
+      let currentFunction = undefined;
+
+      // First, check if we're inside a function by scanning from the top
+      for (let i = 0; i <= currentLineNumber; i++) {
+        const line = lines[i].trim();
+
+        // Check for function start declarations
+        const functionStartMatch = line.match(
+          /\b(FUNCTION|FUNCTION_BLOCK|PROGRAM)\s+(\w+)/i
+        );
+        if (functionStartMatch) {
+          nestingLevel++;
+          currentFunction = functionStartMatch[2];
+        }
+
+        // Check for function end declarations
+        if (line.match(/\b(END_FUNCTION|END_FUNCTION_BLOCK|END_PROGRAM)\b/i)) {
+          nestingLevel--;
+          if (nestingLevel === 0) {
+            currentFunction = undefined;
+          }
+        }
+      }
+
+      // If we're in a function, return it
+      if (nestingLevel > 0 && currentFunction) {
+        return currentFunction;
+      }
+
+      // Fallback: search backwards from cursor position for the closest function
+      for (let i = currentLineNumber; i >= 0; i--) {
+        const line = lines[i].trim();
+
+        // Check for function declarations
+        const functionMatch = line.match(
+          /\b(FUNCTION|FUNCTION_BLOCK|PROGRAM)\s+(\w+)/i
+        );
+        if (functionMatch) {
+          return functionMatch[2]; // Return function name
+        }
+
+        // If we find an END_FUNCTION, we need to skip back past its beginning
+        if (line.match(/\b(END_FUNCTION|END_FUNCTION_BLOCK|END_PROGRAM)\b/i)) {
+          let skipNestingLevel = 1;
+
+          // Keep going backward until we find the matching function start
+          while (i > 0 && skipNestingLevel > 0) {
+            i--;
+            const prevLine = lines[i].trim();
+
+            if (
+              prevLine.match(/\b(FUNCTION|FUNCTION_BLOCK|PROGRAM)\s+(\w+)/i)
+            ) {
+              skipNestingLevel--;
+            }
+            if (
+              prevLine.match(
+                /\b(END_FUNCTION|END_FUNCTION_BLOCK|END_PROGRAM)\b/i
+              )
+            ) {
+              skipNestingLevel++;
             }
           }
-        }}
+        }
+      }
+
+      return undefined;
+    } catch (error) {
+      console.error('Error getting current function:', error);
+      return undefined;
+    }
+  };
+
+  // Update the isCompileDisabled check
+  const isCompileDisabled = useCallback(() => {
+    // Only disable if we're actively compiling
+    return isCompiling;
+  }, [isCompiling]);
+
+  // This effect sets up initial watch on the compiler status and runs once
+  useEffect(() => {
+    if (
+      compilerStatus &&
+      (compilerStatus === 'success' || compilerStatus === 'error')
+    ) {
+      console.log('🔄 Compiler status updated:', compilerStatus);
+      setIsCompiling(false);
+
+      if (compilerStatus === 'success' && compilerResult?.success) {
+        toast.success('Compilation successful');
+      } else if (compilerStatus === 'error') {
+        toast.error('Compilation failed');
+      }
+    }
+  }, [compilerStatus, compilerResult]);
+
+  return (
+    <div className="flex flex-col">
+      <CommandBar
+        projectName={currentProjectName}
+        onDeploy={handleDeploy}
+        onCompile={handleCompile}
         hasUnsavedChanges={hasUnsavedChanges}
         isDeploying={isDeploying}
+        isCompiling={isCompiling}
+        isCompileDisabled={isCompileDisabled()}
+        isDeployDisabled={!connected || isDeploying || isCompileDisabled()}
       />
       <div className="h-full flex">
         <Resizable
-          defaultSize={{ width: '20%', height: '100%' }}
+          defaultSize={{ width: '20%' }}
           minWidth={200}
           maxWidth="50%"
           enable={{ right: true }}
@@ -2019,8 +2364,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           />
         </Resizable>
 
-        <div className="flex-1 flex flex-col">
-          <div className="h-10 flex items-center border-b overflow-x-auto">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex items-center border-b overflow-x-auto">
             <div className="flex items-center px-2">
               <Button
                 variant="ghost"
@@ -2061,6 +2406,31 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
               />
             ))}
           </div>
+
+          {/* Breadcrumbs */}
+          {activeFile && (
+            <BreadcrumbPath
+              path={activeFile.path || ''}
+              filePath={activeFile.path}
+              fileName={activeFile.name}
+              activeFileId={activeFile.id}
+              repoName={currentProjectName.replace(/\s+/g, '-').toLowerCase()}
+              currentFunction={
+                activeFile.nodeType === 'file'
+                  ? getCurrentFunctionName()
+                  : undefined
+              }
+              onSelectFile={(fileNode) => {
+                console.log(
+                  'MonacoEditor: Selecting file node from breadcrumb:',
+                  fileNode.name
+                );
+                handleSelectFile(fileNode, true);
+              }}
+              fileTree={files}
+            />
+          )}
+
           <div className="flex-1 h-full">
             {activeFile?.nodeType === 'trends' ? (
               <TrendsTab file={activeFile} />
@@ -2069,7 +2439,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
             ) : (
               <EditorErrorBoundary>
                 <Editor
-                  height="calc(100vh - 6rem)"
+                  height="50vh"
                   defaultLanguage="plaintext"
                   theme={monacoTheme}
                   onMount={handleEditorDidMount}
@@ -2082,6 +2452,11 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
                 />
               </EditorErrorBoundary>
             )}
+          </div>
+
+          {/* Add CompilePanel component */}
+          <div className="p-4 border-t bg-background h-[36vh] overflow-scroll">
+            <CompilePanel files={iecFiles} />
           </div>
         </div>
       </div>

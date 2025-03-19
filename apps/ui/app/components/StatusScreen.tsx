@@ -9,7 +9,7 @@ interface StatusScreenProps {
 }
 
 export default function StatusScreen({ file }: StatusScreenProps) {
-  const { status, isConnected, controllers } = useWebSocket();
+  const { status, controllers } = useWebSocket();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Update the clock every second

@@ -104,13 +104,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     }
   };
 
-  const handleViewStatus = () => {
-    console.log('View status clicked for:', node?.name);
-    // This would redirect to the Control app in a real implementation
-    alert(`Redirecting to status page for ${node?.name}`);
-    onClose();
-  };
-
   const handleOpenVariableMonitor = () => {
     console.log('Open Variable Monitor clicked for:', node?.name);
     if (node && onOpenVariableMonitor) {

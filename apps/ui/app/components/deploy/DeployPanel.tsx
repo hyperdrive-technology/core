@@ -1,8 +1,8 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
-import React, { useState } from 'react';
+import { Code, Loader2, Upload } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { useWebSocket } from '../context/WebSocketContext';
 
 interface DeployPanelProps {
@@ -11,10 +11,107 @@ interface DeployPanelProps {
 
 export const DeployPanel: React.FC<DeployPanelProps> = ({ projectPath }) => {
   const [isDeploying, setIsDeploying] = useState(false);
+  const [isCompiling, setIsCompiling] = useState(false);
   const [deployError, setDeployError] = useState<string | null>(null);
+  const [compileError, setCompileError] = useState<string | null>(null);
+  const [compilationResult, setCompilationResult] = useState<{
+    success: boolean;
+  } | null>(null);
   const { isConnected } = useWebSocket();
+  const [stFilesCount, setStFilesCount] = useState(0);
+
+  // Check if the project path is an ST file and count all ST files
+  useEffect(() => {
+    // Count all ST files in the project - this is a simplified version
+    // In a real implementation, you would scan the project directory
+    fetch('http://localhost:3000/api/st-files-count', {
+      method: 'GET',
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        setStFilesCount(data.count || 0);
+      })
+      .catch((error) => {
+        console.error('Error fetching ST files count:', error);
+        // Fallback to assuming there are files to compile
+        setStFilesCount(1);
+      });
+  }, [projectPath]);
+
+  const handleCompile = async () => {
+    try {
+      setIsCompiling(true);
+      setCompileError(null);
+      setCompilationResult(null);
+
+      // Use the single API endpoint for compilation
+      const response = await fetch('http://localhost:3000/api/compile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectPath: projectPath,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Compilation failed');
+      }
+
+      setCompilationResult({ success: true });
+      setStFilesCount(result.fileCount || stFilesCount);
+    } catch (error) {
+      setCompileError(
+        error instanceof Error ? error.message : 'Compilation failed'
+      );
+      setCompilationResult({ success: false });
+    } finally {
+      setIsCompiling(false);
+    }
+  };
 
   const handleDeploy = async () => {
+    // If we haven't compiled successfully, compile first
+    if (!compilationResult?.success) {
+      try {
+        setIsCompiling(true);
+        setCompileError(null);
+
+        const compileResponse = await fetch(
+          'http://localhost:3000/api/compile',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              projectPath: projectPath,
+            }),
+          }
+        );
+
+        const compileResult = await compileResponse.json();
+
+        if (!compileResponse.ok) {
+          throw new Error(compileResult.error || 'Compilation failed');
+        }
+
+        setCompilationResult({ success: true });
+        setStFilesCount(compileResult.fileCount || stFilesCount);
+      } catch (error) {
+        setCompileError(
+          error instanceof Error ? error.message : 'Compilation failed'
+        );
+        setCompilationResult({ success: false });
+        return; // Don't proceed with deployment if compilation fails
+      } finally {
+        setIsCompiling(false);
+      }
+    }
+
     try {
       setIsDeploying(true);
       setDeployError(null);
@@ -61,6 +158,22 @@ export const DeployPanel: React.FC<DeployPanelProps> = ({ projectPath }) => {
           </div>
         </div>
 
+        {stFilesCount === 0 && (
+          <Alert>
+            <AlertTitle>No IEC-61131 Files Found</AlertTitle>
+            <AlertDescription>
+              No IEC-61131 (.st) files found in the Control section
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {compileError && (
+          <Alert variant="destructive">
+            <AlertTitle>Compilation Error</AlertTitle>
+            <AlertDescription>{compileError}</AlertDescription>
+          </Alert>
+        )}
+
         {deployError && (
           <Alert variant="destructive">
             <AlertTitle>Deployment Error</AlertTitle>
@@ -69,9 +182,39 @@ export const DeployPanel: React.FC<DeployPanelProps> = ({ projectPath }) => {
         )}
 
         <Button
+          onClick={handleCompile}
+          disabled={isCompiling || stFilesCount === 0}
+          className="w-full mb-2"
+          title={
+            stFilesCount === 0
+              ? 'No IEC-61131 (.st) files to compile'
+              : `Compile all IEC-61131 files (${stFilesCount} files found)`
+          }
+        >
+          {isCompiling ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Compiling...
+            </>
+          ) : (
+            <>
+              <Code className="mr-2 h-4 w-4" />
+              Compile All Files
+            </>
+          )}
+        </Button>
+
+        <Button
           onClick={handleDeploy}
-          disabled={!isConnected || isDeploying}
+          disabled={
+            !isConnected || isDeploying || isCompiling || stFilesCount === 0
+          }
           className="w-full"
+          title={
+            stFilesCount === 0
+              ? 'No IEC-61131 (.st) files to deploy'
+              : 'Deploy all compiled files'
+          }
         >
           {isDeploying ? (
             <>
@@ -79,7 +222,10 @@ export const DeployPanel: React.FC<DeployPanelProps> = ({ projectPath }) => {
               Deploying...
             </>
           ) : (
-            'Deploy Project'
+            <>
+              <Upload className="mr-2 h-4 w-4" />
+              Deploy Project
+            </>
           )}
         </Button>
       </div>

@@ -1,19 +1,27 @@
 import { Button } from '@/components/ui/button';
-import { Plug, Power, Upload } from 'lucide-react';
+import { Code, Plug, Power, Upload } from 'lucide-react';
 import { useWebSocket } from './context/WebSocketContext';
 
 export interface CommandBarProps {
   projectName: string;
   onDeploy: () => void;
+  onCompile: () => void;
   hasUnsavedChanges: boolean;
   isDeploying?: boolean;
+  isCompiling?: boolean;
+  isCompileDisabled?: boolean;
+  isDeployDisabled?: boolean;
 }
 
 export const CommandBar = ({
   projectName,
   onDeploy,
+  onCompile,
   hasUnsavedChanges,
   isDeploying,
+  isCompiling,
+  isCompileDisabled,
+  isDeployDisabled,
 }: CommandBarProps) => {
   const { isConnected, connect, disconnect, controllers } = useWebSocket();
 
@@ -28,13 +36,6 @@ export const CommandBar = ({
   const connectedCount = controllers.filter((c) => c.isConnected).length;
   const totalControllers = controllers.length;
 
-  const connectionStatus =
-    totalControllers > 0
-      ? `${connectedCount}/${totalControllers} connected`
-      : isConnected
-      ? 'Connected'
-      : 'Disconnected';
-
   return (
     <div className="flex items-center justify-between p-2 border-b dark:border-gray-700  dark:bg-gray-900">
       <div />
@@ -43,7 +44,7 @@ export const CommandBar = ({
         {projectName}
         {hasUnsavedChanges && (
           <span
-            className="ml-2 h-2 w-2 rounded-full bg-gray-900 dark:bg-gray-100"
+            className="ml-2 size-2 rounded-full bg-gray-900 dark:bg-gray-100"
             title="Unsaved Changes (Ctrl+S to save)"
           />
         )}
@@ -54,13 +55,32 @@ export const CommandBar = ({
         <Button
           variant="outline"
           size="sm"
+          onClick={onCompile}
+          disabled={isCompiling || isCompileDisabled}
+          title={
+            isCompileDisabled
+              ? 'No IEC-61131 (.st) files to compile'
+              : 'Compile all IEC-61131 files under Control (Ctrl+Shift+C)'
+          }
+          className="flex items-center"
+        >
+          <Code className="h-4 w-4 mr-1" />
+          {isCompiling ? 'Compiling...' : 'Compile All'}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           onClick={onDeploy}
-          disabled={!isConnected || isDeploying}
-          title="Deploy to Runtime (Ctrl+Shift+D)"
+          disabled={isDeployDisabled || !isConnected || isDeploying}
+          title={
+            isDeployDisabled
+              ? 'Only IEC-61131 (.st) files can be deployed'
+              : 'Deploy to Runtime (Ctrl+Shift+D)'
+          }
           className="flex items-center"
         >
           <Upload className="h-4 w-4 mr-1" />
-          Deploy
+          {isDeploying ? 'Deploying...' : 'Deploy'}
         </Button>
         <Button
           variant={isConnected ? 'default' : 'outline'}

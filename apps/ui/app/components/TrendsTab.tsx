@@ -39,9 +39,6 @@ export default function TrendsTab({ file }: TrendsTabProps) {
   const [trendData, setTrendData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Extract the file path from the file id to use in the PLC data request
-  const filePath = file.id.replace('trends-', '');
-
   // Get available variables from WebSocket when the component mounts
   useEffect(() => {
     // Use data from WebSocket variables if available

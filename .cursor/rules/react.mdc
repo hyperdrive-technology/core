@@ -23,6 +23,8 @@ alwaysApply: false
 - Implement custom hooks for reusable logic
 - Use useCallback for memoized callbacks
 - Apply useMemo for expensive calculations
+- Use Shadcn components where possible
+- Try not to edit the Shadcn components
 
 ## Component Structure
 

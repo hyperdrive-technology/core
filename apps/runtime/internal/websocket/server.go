@@ -1,8 +1,10 @@
 package websocket
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,6 +68,12 @@ func (s *Server) setupRoutes() {
 	// API endpoints
 	api := s.router.Group("/api")
 	{
+		// Get count of ST files
+		api.GET("/st-files-count", s.handleSTFilesCount)
+
+		// Compile code (validate without deploying)
+		api.POST("/compile", s.handleCompile)
+
 		// Deploy code
 		api.POST("/deploy", s.handleDeploy)
 
@@ -143,6 +151,66 @@ func (s *Server) sendPeriodicUpdates(conn *websocket.Conn) {
 			}
 		}
 	}
+}
+
+// handleSTFilesCount returns the count of ST files under the Control section
+func (s *Server) handleSTFilesCount(c *gin.Context) {
+	// In a real implementation, this would scan the project directory
+	// Here we return a placeholder count
+	c.JSON(http.StatusOK, gin.H{"count": 3}) // Placeholder count
+}
+
+// handleCompile validates the code without deploying it
+func (s *Server) handleCompile(c *gin.Context) {
+	var req struct {
+		Files       []runtime.DeployRequest `json:"files"`
+		ProjectPath string                  `json:"projectPath,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.Files) == 0 {
+		// If no files were provided but a project path was, we can assume this is a project-wide compile
+		if req.ProjectPath != "" {
+			// In a real implementation, we would find all ST files in the project and compile them
+			// For now, just return a success with a placeholder count
+			c.JSON(http.StatusOK, gin.H{
+				"status":    "compiled",
+				"fileCount": 3, // Placeholder count
+				"success":   true,
+			})
+			return
+		}
+
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No files provided for compilation", "success": false})
+		return
+	}
+
+	// Validate all ASTs without deploying
+	var errors []string
+	for _, file := range req.Files {
+		_, err := runtime.ParseAST(file.AST)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("Error in file %s: %s", file.FilePath, err.Error()))
+		}
+	}
+
+	if len(errors) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   strings.Join(errors, "; "),
+			"success": false,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "compiled",
+		"fileCount": len(req.Files),
+		"success":   true,
+	})
 }
 
 // handleDeploy handles code deployment requests
