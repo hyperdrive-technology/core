@@ -135,6 +135,154 @@ export function CompilePanel({
     }
   }, [status, result, error, onCompilationSuccess]);
 
+  // Add a new function to format the AST for display
+  const formatASTForDisplay = (ast: any): string[] => {
+    if (!ast) return ['No AST data available'];
+
+    const lines: string[] = [`AST Type: ${ast.type}`];
+
+    // Add program declarations
+    if (ast.programs && ast.programs.length > 0) {
+      lines.push(`Programs (${ast.programs.length}):`);
+      ast.programs.forEach((prog: any) => {
+        lines.push(`  - ${prog.name} (type: ${prog.type})`);
+      });
+    }
+
+    // Add function block declarations
+    if (ast.functionBlocks && ast.functionBlocks.length > 0) {
+      lines.push(`Function Blocks (${ast.functionBlocks.length}):`);
+      ast.functionBlocks.forEach((fb: any) => {
+        lines.push(`  - ${fb.name} (type: ${fb.type})`);
+      });
+    }
+
+    // Add function declarations
+    if (ast.functions && ast.functions.length > 0) {
+      lines.push(`Functions (${ast.functions.length}):`);
+      ast.functions.forEach((func: any) => {
+        lines.push(`  - ${func.name} (type: ${func.type})`);
+      });
+    }
+
+    return lines;
+  };
+
+  // Update the event handler to include AST information
+  const handleCompilationResult = (event: CustomEvent<any>) => {
+    const compilationResult = event.detail;
+    console.log('CompilePanel received compilation result:', compilationResult);
+
+    if (!compilationResult) return;
+
+    // Update status based on compilation success
+    setIsLoading(false);
+
+    // Clear previous logs before adding new ones
+    setLogs([
+      `Received compilation results for ${compilationResult.fileCount} file(s)`,
+    ]);
+
+    // Update logs with compilation results
+    if (compilationResult.success) {
+      setLogs((prev) => [
+        ...prev,
+        `✅ Compilation successful for ${compilationResult.fileCount} file(s)`,
+      ]);
+    } else {
+      setLogs((prev) => [...prev, `❌ Compilation failed`]);
+    }
+
+    // Process diagnostics
+    if (compilationResult.diagnostics) {
+      compilationResult.diagnostics.forEach(
+        (fileDiag: {
+          fileName: string;
+          diagnostics: Array<{
+            line: number;
+            column: number;
+            message: string;
+            severity: 'error' | 'warning';
+          }>;
+        }) => {
+          setLogs((prev) => [...prev, `Diagnostics for ${fileDiag.fileName}:`]);
+
+          if (fileDiag.diagnostics.length === 0) {
+            setLogs((prev) => [...prev, `  No issues found`]);
+          } else {
+            fileDiag.diagnostics.forEach(
+              (diag: {
+                line: number;
+                column: number;
+                message: string;
+                severity: 'error' | 'warning';
+              }) => {
+                const prefix = diag.severity === 'error' ? '❌' : '⚠️';
+                const logMsg = `  ${prefix} Line ${diag.line}, Col ${diag.column}: ${diag.message}`;
+                setLogs((prev) => [...prev, logMsg]);
+              }
+            );
+          }
+        }
+      );
+    }
+
+    // Add AST information if compilation was successful
+    if (compilationResult.success && compilationResult.ast) {
+      // First add the header lines
+      setLogs((prev) => [
+        ...prev,
+        '', // Empty line for spacing
+        '🏗️ AST Structure:',
+      ]);
+
+      // Then add each formatted AST line
+      const astLines = formatASTForDisplay(compilationResult.ast);
+      for (const line of astLines) {
+        setLogs((prev) => [...prev, `  ${line}`]);
+      }
+
+      // Add JSON representation
+      setLogs((prev) => [
+        ...prev,
+        '', // Empty line for spacing
+        '🔍 AST as JSON:',
+      ]);
+
+      try {
+        // Format the JSON with indentation for readability
+        const jsonStr = JSON.stringify(compilationResult.ast, null, 2);
+        // Split the JSON into lines and add each line to the logs
+        const jsonLines = jsonStr.split('\n');
+        for (const line of jsonLines) {
+          setLogs((prev) => [...prev, `  ${line}`]);
+        }
+      } catch (error) {
+        setLogs((prev) => [
+          ...prev,
+          `  Error formatting AST as JSON: ${error}`,
+        ]);
+      }
+    }
+  };
+
+  // Add an effect to listen for compilation events
+  useEffect(() => {
+    // Register event listener
+    window.addEventListener(
+      'iec-compilation-result',
+      handleCompilationResult as EventListener
+    );
+
+    // Clean up on unmount
+    return () => {
+      window.removeEventListener(
+        'iec-compilation-result',
+        handleCompilationResult as EventListener
+      );
+    };
+  }, []);
+
   return (
     <Card className="w-full">
       <CardHeader className="pb-2">

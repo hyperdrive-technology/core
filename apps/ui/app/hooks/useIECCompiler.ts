@@ -63,6 +63,17 @@ export function useIECCompiler(): UseIECCompilerResult {
           if (type === 'compile-result') {
             setResult(compilationResult);
             setStatus(compilationResult.success ? 'success' : 'error');
+
+            // Dispatch a custom event with the compilation result
+            // This allows other components to react to the compilation result
+            // without having to pass the result down through props
+            if (typeof window !== 'undefined') {
+              const customEvent = new CustomEvent('iec-compilation-result', {
+                detail: compilationResult,
+              });
+              window.dispatchEvent(customEvent);
+              console.log('Dispatched iec-compilation-result event');
+            }
           } else if (type === 'error') {
             setError(workerError || 'Unknown compilation error');
             setStatus('error');
