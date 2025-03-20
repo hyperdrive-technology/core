@@ -14,11 +14,12 @@ import React, {
 } from 'react';
 import { toast } from 'sonner';
 import { useIECCompiler } from '../hooks/useIECCompiler';
+import { useMonacoLanguageClient } from '../hooks/useMonacoLanguageClient';
+import { IECFile } from '../utils/iec-file-loader';
 import {
   IEC61131_LANGUAGE_ID,
   registerIEC61131Language,
-} from '../server/iec61131/language-service';
-import { IECFile } from '../utils/iec-file-loader';
+} from '../workers/lsp/language-service';
 import BreadcrumbPath from './BreadcrumbPath';
 import { CommandBar } from './CommandBar';
 import { CompilePanel } from './CompilePanel';
@@ -476,6 +477,9 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     [editorReady]
   );
 
+  // Use our custom language client hook
+  useMonacoLanguageClient(monacoRef.current, editorRef.current);
+
   // Handle editor mounting
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
@@ -520,43 +524,20 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     });
 
     // Ensure editor is ready before marking as ready
-    // This helps prevent the "Cannot read properties of undefined (reading 'domNode')" error
     setTimeout(() => {
       console.log('Setting editor as ready');
       setEditorReady(true);
     }, 100);
 
     // Initialize the IEC 61131-3 language services
-    import('../server/iec61131/langium-monaco-setup')
-      .then(({ setupLangiumMonaco }) => {
-        console.log('Setting up Langium Monaco integration...');
-        // Set up the Langium language services
-        setupLangiumMonaco(monaco);
-
-        // Set up keyboard shortcut for formatting IEC 61131 files
-        editor.addAction({
-          id: 'format-st-document',
-          label: 'Format Document',
-          keybindings: [
-            monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.KeyF,
-          ],
-          contextMenuGroupId: 'navigation',
-          contextMenuOrder: 1.5,
-          run: () => {
-            // Execute the ST format command if it's an ST file
-            const model = editor.getModel();
-            if (model && model.getLanguageId() === 'iec-61131') {
-              // Use a command that's registered by the setupLangiumMonaco function
-              const formatAction = editor.getAction('st.formatDocument');
-              if (formatAction) {
-                formatAction.run();
-              }
-            }
-          },
-        });
+    import('../workers/lsp/lsp-monaco-setup')
+      .then(({ setupLSPMonaco }) => {
+        console.log('Setting up Monaco integration...');
+        // Set up the language services
+        setupLSPMonaco(monaco);
       })
       .catch((error) => {
-        console.error('Error setting up Langium Monaco integration:', error);
+        console.error('Error setting up Monaco integration:', error);
       });
 
     // Add Format Document command for structured text files
@@ -908,184 +889,6 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       }
     }
   }, [editorReady, activeFileId, openFiles, displayFileInEditor]);
-
-  // Use our custom language client hook - but only after editor is ready
-  useEffect(() => {
-    if (editorReady && monacoRef.current && editorRef.current) {
-      // Start language client after editor is fully ready
-      const delay = setTimeout(() => {
-        // This is where we would normally call the hook, but we can't call hooks conditionally
-        // Instead, we'll set a flag that will be used by the language client hook
-        const worker = new Worker(
-          new URL('../workers/langium-worker.ts', import.meta.url),
-          { type: 'module' }
-        );
-
-        setupLanguageClient(monacoRef.current!, editorRef.current!, worker);
-
-        return () => {
-          worker.terminate();
-        };
-      }, 500);
-
-      return () => clearTimeout(delay);
-    }
-  }, [editorReady]);
-
-  // Language client setup (not a hook)
-  function setupLanguageClient(
-    monaco: Monaco,
-    editor: editor.IStandaloneCodeEditor,
-    worker: Worker
-  ) {
-    let currentModel: editor.ITextModel | null = null;
-    let modelChangeSubscription: { dispose: () => void } | null = null;
-    let isProcessingDiagnostics = false;
-    let contentChangeDebounce: ReturnType<typeof setTimeout> | null = null;
-    let lastContent = '';
-
-    try {
-      // Handle worker messages
-      worker.onmessage = (event) => {
-        // Handle diagnostics
-        if (
-          event.data.type === 'diagnostics' &&
-          event.data.uri &&
-          event.data.diagnostics
-        ) {
-          try {
-            // Ensure we don't trigger another content change while updating markers
-            isProcessingDiagnostics = true;
-
-            const model = monaco.editor.getModel(
-              monaco.Uri.parse(event.data.uri)
-            );
-
-            if (model) {
-              monaco.editor.setModelMarkers(
-                model,
-                'langium',
-                event.data.diagnostics.map((d: any) => ({
-                  startLineNumber: d.range.start.line + 1,
-                  startColumn: d.range.start.character + 1,
-                  endLineNumber: d.range.end.line + 1,
-                  endColumn: d.range.end.character + 1,
-                  message: d.message,
-                  severity:
-                    d.severity === 1
-                      ? monaco.MarkerSeverity.Error
-                      : d.severity === 2
-                      ? monaco.MarkerSeverity.Warning
-                      : monaco.MarkerSeverity.Info,
-                }))
-              );
-            }
-
-            // Re-enable content change processing
-            setTimeout(() => {
-              isProcessingDiagnostics = false;
-            }, 0);
-          } catch (error) {}
-        }
-      };
-
-      // Set up content change handler
-      const setupModelChangeListener = () => {
-        // Clean up previous subscription if it exists
-        if (modelChangeSubscription) {
-          modelChangeSubscription.dispose();
-          modelChangeSubscription = null;
-        }
-
-        currentModel = editor.getModel();
-        if (currentModel) {
-          modelChangeSubscription = currentModel.onDidChangeContent(
-            (_event) => {
-              try {
-                // Skip if we're currently processing diagnostics to avoid infinite loops
-                if (isProcessingDiagnostics) {
-                  return;
-                }
-
-                // Skip if this is a programmatic content update
-                // We added a flag to the model in the displayFileInEditor function
-                if ((currentModel as any)._isSettingContent) {
-                  return;
-                }
-
-                // Get current content
-                const content = currentModel?.getValue() || '';
-
-                // Skip if content hasn't changed
-                if (content === lastContent) {
-                  return;
-                }
-
-                lastContent = content;
-
-                // Debounce content changes to reduce worker messages and only send after typing pauses
-                if (contentChangeDebounce) {
-                  clearTimeout(contentChangeDebounce);
-                }
-
-                contentChangeDebounce = setTimeout(() => {
-                  worker.postMessage({
-                    type: 'documentChange',
-                    uri: currentModel?.uri.toString(),
-                    content,
-                  });
-                  contentChangeDebounce = null;
-                }, 800); // Longer delay to ensure user has finished typing
-              } catch (error) {}
-            }
-          );
-        }
-      };
-
-      // Initial setup
-      setupModelChangeListener();
-
-      // Listen for model changes in the editor
-      const modelChangeDisposable = editor.onDidChangeModel(() => {
-        // Reset state when model changes
-        lastContent = '';
-        if (contentChangeDebounce) {
-          clearTimeout(contentChangeDebounce);
-          contentChangeDebounce = null;
-        }
-        isProcessingDiagnostics = false;
-
-        setupModelChangeListener();
-
-        // Send initial content to worker with some delay to ensure editor is ready
-        const model = editor.getModel();
-        if (model) {
-          setTimeout(() => {
-            const content = model.getValue();
-            lastContent = content;
-            worker.postMessage({
-              type: 'documentChange',
-              uri: model.uri.toString(),
-              content,
-            });
-          }, 300);
-        }
-      });
-
-      // Return cleanup function
-      return () => {
-        modelChangeDisposable.dispose();
-        if (modelChangeSubscription) {
-          modelChangeSubscription.dispose();
-        }
-        if (contentChangeDebounce) {
-          clearTimeout(contentChangeDebounce);
-        }
-      };
-    } catch (error) {
-      return () => {};
-    }
-  }
 
   // Get active file
   const activeFile = openFiles.find((file) => file.id === activeFileId) || null;

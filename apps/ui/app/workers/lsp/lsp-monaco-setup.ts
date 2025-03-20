@@ -1,18 +1,15 @@
 import * as monaco from 'monaco-editor';
 import { editor, languages } from 'monaco-editor';
 import { monarchSyntax } from './custom-monarch-syntax';
-import { IEC61131LanguageMetaData } from './generated/grammar/module';
 
 // Constants
-const LANGUAGE_ID = IEC61131LanguageMetaData.languageId;
-const WORKER_PATH = new URL('./langium-worker.ts', import.meta.url);
+const LANGUAGE_ID = 'iec-61131';
+const WORKER_PATH = new URL('./lsp.worker.ts', import.meta.url);
 
 /**
  * Set up the Langium web worker for Monaco Editor
  */
-export function setupLangiumMonaco(
-  monaco: typeof import('monaco-editor'),
-): void {
+export function setupLSPMonaco(monaco: typeof import('monaco-editor')): void {
   // Register the language with Monaco
   monaco.languages.register({
     id: LANGUAGE_ID,
@@ -67,11 +64,11 @@ export function setupLangiumMonaco(
       markers: {
         start: new RegExp(
           '^\\s*(IF|CASE|FOR|WHILE|REPEAT|FUNCTION|FUNCTION_BLOCK|PROGRAM|VAR|VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|VAR_TEMP|VAR_EXTERNAL|VAR_GLOBAL|STRUCT)\\b',
-          'i',
+          'i'
         ),
         end: new RegExp(
           '^\\s*(END_IF|END_CASE|END_FOR|END_WHILE|END_REPEAT|END_FUNCTION|END_FUNCTION_BLOCK|END_PROGRAM|END_VAR|END_STRUCT)\\b',
-          'i',
+          'i'
         ),
       },
     },
@@ -238,7 +235,7 @@ function formatStructuredText(model: editor.ITextModel): languages.TextEdit[] {
     // Handle indentation decreases
     if (
       /\b(END_IF|END_WHILE|END_FOR|END_FUNCTION|END_FUNCTION_BLOCK|END_PROGRAM|END_VAR|END_TYPE|END_STRUCT)\b/i.test(
-        line,
+        line
       )
     ) {
       indentLevel = Math.max(0, indentLevel - 1);
@@ -257,7 +254,7 @@ function formatStructuredText(model: editor.ITextModel): languages.TextEdit[] {
     // Handle indentation increases
     if (
       /\b(IF|THEN|ELSE|WHILE|FOR|FUNCTION|FUNCTION_BLOCK|PROGRAM|VAR|VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|TYPE|STRUCT)\b/i.test(
-        line,
+        line
       ) &&
       !/\b(END_|THEN|ELSE|DO)\b/i.test(line)
     ) {
@@ -286,7 +283,7 @@ function needsSemicolon(line: string): boolean {
   // Lines that shouldn't have semicolons
   if (
     /\b(IF|THEN|ELSE|ELSIF|END_IF|CASE|OF|END_CASE|FOR|TO|BY|DO|END_FOR|WHILE|END_WHILE|REPEAT|UNTIL|END_REPEAT|FUNCTION|END_FUNCTION|FUNCTION_BLOCK|END_FUNCTION_BLOCK|PROGRAM|END_PROGRAM|VAR|VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|END_VAR|TYPE|END_TYPE|STRUCT|END_STRUCT)\b/i.test(
-      trimmed,
+      trimmed
     ) ||
     trimmed.startsWith('//') ||
     trimmed.startsWith('(*') ||

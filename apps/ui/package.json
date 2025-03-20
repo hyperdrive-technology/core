@@ -7,32 +7,12 @@
     "dev": "vinxi dev",
     "build": "vinxi build",
     "start": "vinxi start",
-    "typecheck": "tsc --noEmit",
-    "langium:generate": "langium generate"
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.6.1",
-  "langium": {
-    "projectName": "IEC61131",
-    "languages": [
-      {
-        "id": "iec-61131",
-        "grammar": "app/server/iec61131/iec-61131.langium",
-        "fileExtensions": [
-          ".st"
-        ],
-        "textMate": {
-          "out": "app/server/iec61131/iec61131.tmLanguage.json"
-        },
-        "monarch": {
-          "out": "app/server/iec61131/monarch-syntax.js"
-        }
-      }
-    ],
-    "out": "app/server/iec61131/generated"
-  },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
     "@radix-ui/react-checkbox": "^1.1.4",
@@ -57,9 +37,10 @@
     "@trpc/client": "11.0.0-rc.808",
     "@trpc/react-query": "11.0.0-rc.808",
     "@trpc/server": "11.0.0-rc.808",
+    "chevrotain": "^11.0.3",
+    "chevrotain-allstar": "^0.3.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "langium": "~3.3.1",
     "lucide-react": "^0.475.0",
     "monaco-editor": "^0.45.0",
     "monaco-languageclient": "^7.3.0",
@@ -89,19 +70,7 @@
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
-    "langium-cli": "~3.3.0",
     "typescript": "^5.7.3",
     "vite-tsconfig-paths": "^5.1.4"
-  },
-  "theia": {
-    "target": "browser",
-    "frontend": {
-      "config": {
-        "applicationName": "Inrush IDE",
-        "preferences": {
-          "files.enableTrash": false
-        }
-      }
-    }
   }
 }

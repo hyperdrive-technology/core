@@ -196,10 +196,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Acknowledgments
 - IEC 61131-3 Standard
 - TanStack Start (https://tanstack.com/start/latest)
-- Langium (https://langium.org/)
+- Chevrotain (https://chevrotain.io/)
 - AsyncAPI (https://www.asyncapi.com/)
 - OpenAPI (https://www.openapis.org/)
-- Theia (https://theia-ide.org/)
 - NATS (https://nats.io/)
 - Gokrazy (https://gokrazy.org/)
 - Caddy (https://caddyserver.com/)

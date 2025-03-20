@@ -46,7 +46,7 @@ export function useIECCompiler(): UseIECCompilerResult {
     if (typeof window !== 'undefined') {
       try {
         workerRef.current = new Worker(
-          new URL('../workers/iec-compile.worker.ts', import.meta.url),
+          new URL('../workers/iec61131/compile.worker.ts', import.meta.url),
           { type: 'module' }
         );
 

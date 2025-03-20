@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 // In a real implementation, you would use monaco-languageclient
 export function useMonacoLanguageClient(
   monaco: any,
-  editorInstance: editor.IStandaloneCodeEditor | null,
+  editorInstance: editor.IStandaloneCodeEditor | null
 ) {
   const workerRef = useRef<Worker | null>(null);
   const requestId = useRef(0);
@@ -19,10 +19,10 @@ export function useMonacoLanguageClient(
         // Create a worker
         // In a real app, ensure your bundler is configured to handle workers
         const worker = new Worker(
-          new URL('../workers/langium-worker.ts', import.meta.url),
+          new URL('../workers/lsp/lsp.worker.ts', import.meta.url),
           {
             type: 'module',
-          },
+          }
         );
         workerRef.current = worker;
 
@@ -60,7 +60,7 @@ export function useMonacoLanguageClient(
               if (model) {
                 monaco.editor.setModelMarkers(
                   model,
-                  'langium',
+                  'iec-61131',
                   data.diagnostics.map((d: any) => ({
                     startLineNumber: d.range.start.line + 1,
                     startColumn: d.range.start.character + 1,
@@ -71,9 +71,9 @@ export function useMonacoLanguageClient(
                       d.severity === 1
                         ? monaco.MarkerSeverity.Error
                         : d.severity === 2
-                          ? monaco.MarkerSeverity.Warning
-                          : monaco.MarkerSeverity.Info,
-                  })),
+                        ? monaco.MarkerSeverity.Warning
+                        : monaco.MarkerSeverity.Info,
+                  }))
                 );
               }
             }
