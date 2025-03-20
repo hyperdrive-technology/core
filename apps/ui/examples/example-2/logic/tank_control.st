@@ -64,7 +64,6 @@ FUNCTION_BLOCK TankController
     DrainDelay : TON; // Delay timer for drain valve
   END_VAR
 
-BEGIN
   // Handle emergency stop
   IF EmergencyStop THEN
     PumpOutput := 0.0;
@@ -201,7 +200,6 @@ BEGIN
       DrainValve := DrainValve AND DrainDelay.Q;
     END_IF;
   END_IF;
-END
 END_FUNCTION_BLOCK
 
 PROGRAM WaterSystem

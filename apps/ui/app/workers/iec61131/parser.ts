@@ -1,4 +1,5 @@
 import { createToken, CstParser, Lexer, TokenType } from 'chevrotain';
+import { LLStarLookaheadStrategy } from 'chevrotain-allstar';
 import type { Program } from './ast';
 import { IEC61131Visitor } from './visitor';
 
@@ -37,15 +38,24 @@ const SL_COMMENT = createToken({
   group: Lexer.SKIPPED,
 });
 
-allTokens.push(WS, ML_COMMENT, SL_COMMENT);
+// Add EOF token - must be first in the token list
+const EOF = createToken({
+  name: 'EOF',
+  pattern: Lexer.NA,
+});
+
+allTokens.push(EOF, WS, ML_COMMENT, SL_COMMENT);
+
+// Create token map for parser to use
+const tokenMap = new Map<string, TokenType>();
+
+// Add EOF to token map
+tokenMap.set('EOF', EOF);
 
 // Define keywords (using strings instead of regexes)
 // Important: In Chevrotain, the order of token definitions matters
 // Keywords must come before identifiers to ensure proper token recognition
 const keywordTokens: Record<string, TokenType> = {};
-
-// Create token map for parser to use
-const tokenMap = new Map<string, TokenType>();
 
 // Define keywords with proper token creation
 [
@@ -99,11 +109,36 @@ const tokenMap = new Map<string, TokenType>();
   'NOT',
   'MOD',
 ].forEach((keyword) => {
-  // Use word boundaries to ensure we match whole keywords
-  // This is crucial for avoiding conflicts with identifiers
+  // Create patterns based on the keyword
+  let pattern;
+
+  // Special handling for END tokens to ensure they're properly distinguished
+  if (
+    keyword === 'END_FUNCTION_BLOCK' ||
+    keyword === 'END_PROGRAM' ||
+    keyword === 'END_FUNCTION' ||
+    keyword === 'END_WHILE' ||
+    keyword === 'END_REPEAT' ||
+    keyword === 'END_STRUCT' ||
+    keyword === 'END_IF' ||
+    keyword === 'END_FOR' ||
+    keyword === 'END_VAR' ||
+    keyword === 'END_CASE' ||
+    keyword === 'END_TYPE'
+  ) {
+    // For END_X tokens, match exactly as specified with word boundary
+    pattern = new RegExp(`\\b${keyword}\\b`, 'i');
+  } else if (keyword === 'END') {
+    // For END token, ensure it's not part of a longer token
+    pattern = /\bEND\b(?!_)/i;
+  } else {
+    // For regular keywords, use word boundaries
+    pattern = new RegExp(`\\b${keyword}\\b`, 'i');
+  }
+
   const token = createToken({
     name: keyword,
-    pattern: new RegExp(`\\b${keyword}\\b`, 'i'),
+    pattern: pattern,
     longer_alt: undefined, // Will be set later for identifiers
   });
 
@@ -141,15 +176,21 @@ Object.entries(operators).forEach(([name, pattern]) => {
   allTokens.push(token);
 });
 
-// Add direct addressing token before IDENTIFIER
-const DIRECT_ADDRESS = createToken({
-  name: 'DIRECT_ADDRESS',
-  pattern: /#[a-zA-Z0-9_.%IX][a-zA-Z0-9_.%IX]*/,
+// Add time literal token with more precise pattern
+const TIME_LITERAL = createToken({
+  name: 'TIME_LITERAL',
+  pattern: /T#[0-9smhd_]+(ms)?|TIME#[0-9smhd_]+(ms)?/i,
   line_breaks: false,
 });
-allTokens.push(DIRECT_ADDRESS);
 
-// Add identifiers and literals last
+// Add direct addressing token
+const DIRECT_ADDRESS = createToken({
+  name: 'DIRECT_ADDRESS',
+  pattern: /#[a-zA-Z0-9_.%:]+/,
+  line_breaks: false,
+});
+
+// Add identifiers and literals
 const IDENTIFIER = createToken({
   name: 'IDENTIFIER',
   pattern: /[a-zA-Z_][a-zA-Z0-9_]*/,
@@ -171,7 +212,8 @@ const STRING = createToken({
   pattern: /'[^']*'|"[^"]*"/,
 });
 
-allTokens.push(IDENTIFIER, NUMBER, STRING);
+// Add tokens in the specific order to ensure correct token recognition priority
+allTokens.push(TIME_LITERAL, DIRECT_ADDRESS, NUMBER, STRING, IDENTIFIER);
 
 // Create lexer instance with proper configuration
 const lexer = new Lexer(allTokens, {
@@ -188,7 +230,7 @@ export class IEC61131Parser extends CstParser {
   constructor() {
     super(allTokens, {
       recoveryEnabled: true,
-      maxLookahead: 3,
+      lookaheadStrategy: new LLStarLookaheadStrategy(),
       nodeLocationTracking: 'full',
     });
     this.lexer = lexer;
@@ -197,6 +239,7 @@ export class IEC61131Parser extends CstParser {
 
   // Define parsing rules
   public program = this.RULE('program', () => {
+    // Handle all top-level declarations
     this.MANY(() => {
       this.OR([
         { ALT: () => this.SUBRULE(this.functionDef) },
@@ -210,43 +253,41 @@ export class IEC61131Parser extends CstParser {
         this.CONSUME(tokenMap.get('SEMICOLON')!);
       });
     });
+
+    // Optional EOF at the end - the input might end naturally without an explicit EOF token
+    this.OPTION2(() => {
+      this.CONSUME(EOF);
+    });
   });
 
   private functionDef = this.RULE('functionDef', () => {
-    this.CONSUME(tokenMap.get('FUNCTION')!);
+    this.CONSUME(keywordTokens['FUNCTION']);
     this.CONSUME(IDENTIFIER);
     this.OPTION(() => {
       this.CONSUME(tokenMap.get('COLON')!);
       this.SUBRULE(this.dataType);
     });
     this.MANY(() => this.SUBRULE(this.varDeclaration));
-    this.CONSUME(tokenMap.get('BEGIN')!);
     this.MANY2(() => this.SUBRULE(this.statement));
-    this.CONSUME(tokenMap.get('END_FUNCTION')!);
+    this.CONSUME(keywordTokens['END_FUNCTION']);
   });
 
   private functionBlock = this.RULE('functionBlock', () => {
-    this.CONSUME(tokenMap.get('FUNCTION_BLOCK')!);
+    this.CONSUME(keywordTokens['FUNCTION_BLOCK']);
     this.CONSUME(IDENTIFIER);
     this.MANY(() => this.SUBRULE(this.varDeclaration));
-    this.CONSUME(tokenMap.get('BEGIN')!);
     this.MANY2(() => this.SUBRULE(this.statement));
-    this.OR([
-      { ALT: () => this.CONSUME(tokenMap.get('END_FUNCTION_BLOCK')!) },
-      { ALT: () => this.CONSUME(tokenMap.get('END')!) },
-    ]);
+    this.CONSUME(keywordTokens['END_FUNCTION_BLOCK']);
   });
 
   private programDecl = this.RULE('programDecl', () => {
-    this.CONSUME(tokenMap.get('PROGRAM')!);
+    this.CONSUME(keywordTokens['PROGRAM']);
     this.CONSUME(IDENTIFIER);
     this.MANY(() => this.SUBRULE(this.varDeclaration));
-    this.CONSUME(tokenMap.get('BEGIN')!);
+    this.CONSUME(keywordTokens['BEGIN']);
     this.MANY2(() => this.SUBRULE(this.statement));
-    this.OR([
-      { ALT: () => this.CONSUME(tokenMap.get('END_PROGRAM')!) },
-      { ALT: () => this.CONSUME(tokenMap.get('END')!) },
-    ]);
+    this.CONSUME(keywordTokens['END']);
+    this.CONSUME(keywordTokens['END_PROGRAM']);
   });
 
   private varDeclaration = this.RULE('varDeclaration', () => {
@@ -412,6 +453,7 @@ export class IEC61131Parser extends CstParser {
       { ALT: () => this.SUBRULE(this.functionCall) },
       { ALT: () => this.SUBRULE(this.variableAccess) },
       { ALT: () => this.CONSUME(DIRECT_ADDRESS) },
+      { ALT: () => this.CONSUME(TIME_LITERAL) },
       { ALT: () => this.CONSUME(NUMBER) },
       { ALT: () => this.CONSUME(STRING) },
       { ALT: () => this.CONSUME(tokenMap.get('TRUE')!) },
@@ -427,15 +469,15 @@ export class IEC61131Parser extends CstParser {
   });
 
   private functionCall = this.RULE('functionCall', () => {
-    this.CONSUME(IDENTIFIER);
+    this.CONSUME(IDENTIFIER, { LABEL: 'functionName' });
     this.CONSUME(tokenMap.get('LPAREN')!);
 
-    // Handle optional argument list
+    // Optional arguments
     this.OPTION(() => {
       // First argument
       this.SUBRULE(this.functionArgument);
 
-      // Additional arguments
+      // More arguments separated by commas
       this.MANY(() => {
         this.CONSUME(tokenMap.get('COMMA')!);
         this.SUBRULE2(this.functionArgument);
@@ -446,17 +488,46 @@ export class IEC61131Parser extends CstParser {
   });
 
   private functionArgument = this.RULE('functionArgument', () => {
-    // Check if it's a named parameter
-    this.OPTION(() => {
-      this.CONSUME(IDENTIFIER);
-      this.CONSUME(tokenMap.get('ASSIGN')!);
-    });
-
-    // The value part - can be expression or direct address
+    // Reorganize with a clearer grammar structure to avoid ambiguity
     this.OR([
-      { ALT: () => this.CONSUME(DIRECT_ADDRESS) },
-      { ALT: () => this.SUBRULE(this.expression) },
+      {
+        // Named argument (positional with name=value syntax)
+        ALT: () => {
+          this.SUBRULE(this.namedArgument);
+        },
+      },
+      {
+        // Positional argument (just a value)
+        ALT: () => {
+          this.SUBRULE(this.positionalArgument);
+        },
+      },
     ]);
+  });
+
+  // Named argument has an explicit parameter name
+  private namedArgument = this.RULE('namedArgument', () => {
+    this.CONSUME(IDENTIFIER, { LABEL: 'paramName' });
+    this.CONSUME(tokenMap.get('ASSIGN')!);
+    this.SUBRULE(this.argumentValue, { LABEL: 'value' });
+  });
+
+  // Positional argument is just a value
+  private positionalArgument = this.RULE('positionalArgument', () => {
+    this.SUBRULE(this.argumentValue, { LABEL: 'value' });
+  });
+
+  // The value part of an argument can be one of these types
+  private argumentValue = this.RULE('argumentValue', () => {
+    // Instead of using GATE which isn't working correctly with ALL(*),
+    // we'll use a more specific approach with explicit token checks
+    if (this.LA(1).tokenType === TIME_LITERAL) {
+      this.CONSUME(TIME_LITERAL, { LABEL: 'timeLiteral' });
+    } else if (this.LA(1).tokenType === DIRECT_ADDRESS) {
+      this.CONSUME(DIRECT_ADDRESS, { LABEL: 'directAddress' });
+    } else {
+      this.SUBRULE(this.expression, { LABEL: 'expression' });
+    }
   });
 
   private ifStmt = this.RULE('ifStmt', () => {
@@ -558,7 +629,6 @@ export class IEC61131Parser extends CstParser {
 
 // Create parser instance and visitor instance
 const parser = new IEC61131Parser();
-const visitor = new IEC61131Visitor();
 
 /**
  * Parse and validate an IEC 61131-3 document using Chevrotain directly
@@ -567,8 +637,48 @@ export function validateIEC61131Document(
   iec61131Code: string
 ): IECCompilerResult {
   try {
+    console.log('Starting lexical analysis...');
+
     // Tokenize the input
     const lexResult = parser.lexer.tokenize(iec61131Code);
+
+    // Log token counts by type
+    const tokenCounts: Record<string, number> = {};
+    lexResult.tokens.forEach((token) => {
+      const tokenType = token.tokenType.name;
+      tokenCounts[tokenType] = (tokenCounts[tokenType] || 0) + 1;
+    });
+
+    console.log('Token type counts:', tokenCounts);
+
+    // Debug: Log time literals and direct addresses specifically
+    console.log('TIME_LITERAL tokens:');
+    lexResult.tokens
+      .filter((token) => token.tokenType.name === 'TIME_LITERAL')
+      .forEach((token) => {
+        console.log(
+          `  ${token.image} at line ${token.startLine}:${token.startColumn}`
+        );
+      });
+
+    console.log('DIRECT_ADDRESS tokens:');
+    lexResult.tokens
+      .filter((token) => token.tokenType.name === 'DIRECT_ADDRESS')
+      .forEach((token) => {
+        console.log(
+          `  ${token.image} at line ${token.startLine}:${token.startColumn}`
+        );
+      });
+
+    // Debug: Log the tokens to see what's being recognized
+    console.log('Tokens recognized (first 50 and last 50):');
+    lexResult.tokens.forEach((token, index) => {
+      if (index < 50 || index > lexResult.tokens.length - 50) {
+        console.log(
+          `Token ${index}: ${token.tokenType.name} - '${token.image}' at line ${token.startLine}:${token.startColumn}`
+        );
+      }
+    });
 
     // Check for lexing errors
     const lexerDiagnostics = lexResult.errors.map((error) => ({
@@ -587,6 +697,7 @@ export function validateIEC61131Document(
     }));
 
     if (lexerDiagnostics.length > 0) {
+      console.log('Lexer diagnostics:', lexerDiagnostics);
       return {
         success: false,
         ast: undefined,
@@ -594,76 +705,148 @@ export function validateIEC61131Document(
       };
     }
 
-    // Parse the tokens
-    parser.input = lexResult.tokens;
-    const cst = parser.program();
+    console.log('Starting parsing...');
 
-    // Check for parsing errors
-    const parserDiagnostics = parser.errors.map((error) => ({
-      severity: 'error' as const,
-      message: error.message,
-      range: {
-        start: {
-          line: error.token.startLine ?? 0,
-          character: error.token.startColumn ?? 0,
-        },
-        end: {
-          line: error.token.endLine ?? 0,
-          character: error.token.endColumn ?? 0,
-        },
-      },
-    }));
-
-    if (parserDiagnostics.length > 0) {
-      return {
-        success: false,
-        ast: undefined,
-        diagnostics: parserDiagnostics,
-      };
-    }
-
-    // Convert CST to AST using visitor
     try {
+      // Parse the tokens
+      parser.input = lexResult.tokens;
+      const cst = parser.program();
+
+      console.log('Parsing complete. Checking for errors...');
+
+      // Check for parsing errors
+      const parserDiagnostics = parser.errors.map((error) => {
+        console.log('Parser error:', error);
+
+        let message = error.message;
+
+        // For token mismatch errors, provide more context
+        if (error.name === 'MismatchedTokenException') {
+          // Add expected vs. found information
+          const expectedToken =
+            (error as any).expectedTokenType?.name || 'unknown';
+          const actualToken = error.token?.image || 'unknown';
+          message = `Expected '${expectedToken}' but found '${actualToken}'. ${message}`;
+        }
+
+        return {
+          severity: 'error' as const,
+          message: message,
+          range: {
+            start: {
+              line: error.token.startLine ?? 0,
+              character: error.token.startColumn ?? 0,
+            },
+            end: {
+              line: error.token.endLine ?? 0,
+              character: error.token.endColumn ?? 0,
+            },
+          },
+        };
+      });
+
+      if (parserDiagnostics.length > 0) {
+        console.log('Parser diagnostics:', parserDiagnostics);
+        return {
+          success: false,
+          ast: undefined,
+          diagnostics: parserDiagnostics,
+        };
+      }
+
+      console.log('Parsing successful. Starting CST to AST conversion...');
+
+      // Create a visitor instance for CST to AST conversion
+      const visitor = new IEC61131Visitor();
+
+      // Convert CST to AST
       const ast = visitor.visit(cst);
+
+      console.log('CST to AST conversion complete.');
+
+      // Semantic analysis would go here
+      // TODO: Implement semantic analysis
+
       return {
         success: true,
         ast,
         diagnostics: [],
       };
     } catch (error) {
-      console.error('Error during CST to AST conversion:', error);
-      return {
-        success: false,
-        ast: undefined,
-        diagnostics: [
-          {
-            severity: 'error' as const,
-            message: `Semantic error: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-            range: {
-              start: { line: 0, character: 0 },
-              end: { line: 0, character: 1 },
+      // Check if it's an ALL(*) lookahead error
+      if (
+        error instanceof Error &&
+        error.message.includes('Ambiguous Alternatives Detected')
+      ) {
+        console.error('ALL(*) lookahead error:', error);
+
+        // Get more specific details to help with debugging
+        let errorDetails = error.message;
+        let lineInfo = '';
+
+        // Specifically look for TIME_LITERAL or DIRECT_ADDRESS issues
+        if (error.message.includes('TIME_LITERAL')) {
+          // Find TIME_LITERAL tokens in the document
+          const timeLiterals = lexResult.tokens.filter(
+            (token) => token.tokenType.name === 'TIME_LITERAL'
+          );
+
+          if (timeLiterals.length > 0) {
+            lineInfo = timeLiterals
+              .map((token) => `line ${token.startLine}:${token.startColumn}`)
+              .join(', ');
+
+            errorDetails = `Ambiguity with TIME_LITERAL tokens at ${lineInfo}. This might be related to time literals in function arguments.`;
+          }
+        } else if (error.message.includes('DIRECT_ADDRESS')) {
+          // Find DIRECT_ADDRESS tokens in the document
+          const directAddresses = lexResult.tokens.filter(
+            (token) => token.tokenType.name === 'DIRECT_ADDRESS'
+          );
+
+          if (directAddresses.length > 0) {
+            lineInfo = directAddresses
+              .map((token) => `line ${token.startLine}:${token.startColumn}`)
+              .join(', ');
+
+            errorDetails = `Ambiguity with DIRECT_ADDRESS tokens at ${lineInfo}. This might be related to direct addressing in function arguments.`;
+          }
+        }
+
+        return {
+          success: false,
+          ast: undefined,
+          diagnostics: [
+            {
+              severity: 'error',
+              message: errorDetails,
+              range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 0 },
+              },
             },
-          },
-        ],
-      };
+          ],
+        };
+      }
+      // Re-throw for general error handler
+      throw error;
     }
   } catch (error) {
-    console.error('Error during IEC-61131 compilation:', error);
+    console.error('Unhandled compiler error:', error);
 
+    // Handle any unexpected errors
     return {
       success: false,
       ast: undefined,
       diagnostics: [
         {
-          severity: 'error' as const,
-          message: `Parser error: ${
+          severity: 'error',
+          message: `Unhandled compiler error: ${
             error instanceof Error ? error.message : String(error)
           }`,
           range: {
             start: { line: 0, character: 0 },
-            end: { line: 0, character: 1 },
+            end: { line: 0, character: 0 },
           },
         },
       ],

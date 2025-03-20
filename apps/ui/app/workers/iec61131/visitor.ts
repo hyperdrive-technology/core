@@ -41,13 +41,31 @@ interface IEC61131CstNode extends CstNode {
 
 export class IEC61131Visitor {
   visit(cst: IEC61131CstNode): Program {
-    return {
-      $type: 'Program',
-      enumTypes: this.visitEnumTypes(cst),
-      functionBlocks: this.visitFunctionBlocks(cst),
-      functions: this.visitFunctions(cst),
-      programs: this.visitPrograms(cst),
-    };
+    console.log('Starting CST to AST conversion with visitor');
+
+    try {
+      // Create the Program node
+      const program: Program = {
+        $type: 'Program',
+        enumTypes: this.visitEnumTypes(cst),
+        functionBlocks: this.visitFunctionBlocks(cst),
+        functions: this.visitFunctions(cst),
+        programs: this.visitPrograms(cst),
+      };
+
+      console.log('AST conversion completed successfully');
+      return program;
+    } catch (error) {
+      console.error('Error in visitor:', error);
+      // Add more context to the error if possible
+      if (error instanceof Error) {
+        console.error(
+          'CST node structure at error location:',
+          JSON.stringify(cst.children, null, 2).substring(0, 500) + '...'
+        );
+      }
+      throw error;
+    }
   }
 
   private visitEnumTypes(cst: IEC61131CstNode): EnumType[] {
@@ -264,12 +282,60 @@ export class IEC61131Visitor {
   }
 
   private visitAssignmentStmt(cst: IEC61131CstNode): Assignment {
-    const target = this.visitLeftExpression(
-      cst.children.leftExpression[0] as IEC61131CstNode
-    );
+    console.log('Visiting assignment statement:', JSON.stringify(cst.children));
+
+    let target: LeftExpression;
+
+    // Handle direct identifiers
+    if (cst.children?.IDENTIFIER) {
+      const varName = (cst.children.IDENTIFIER[0] as IToken).image;
+      target = {
+        $type: 'LeftExpression',
+        elements: [
+          {
+            $type: 'ElementAccess',
+            member: varName,
+          },
+        ],
+      };
+
+      // Handle dot access if present (for member access)
+      if (cst.children.DOT && cst.children.IDENTIFIER.length > 1) {
+        for (let i = 1; i < cst.children.IDENTIFIER.length; i++) {
+          target.elements.push({
+            $type: 'ElementAccess',
+            member: (cst.children.IDENTIFIER[i] as IToken).image,
+          });
+        }
+      }
+    }
+    // Handle direct addresses
+    else if (cst.children?.DIRECT_ADDRESS) {
+      const address = (cst.children.DIRECT_ADDRESS[0] as IToken).image;
+      target = {
+        $type: 'LeftExpression',
+        elements: [
+          {
+            $type: 'ElementAccess',
+            member: address,
+          },
+        ],
+      };
+    }
+    // Use the regular left expression if available
+    else if (cst.children?.leftExpression) {
+      target = this.visitLeftExpression(
+        cst.children.leftExpression[0] as IEC61131CstNode
+      );
+    } else {
+      console.error('Invalid assignment target:', JSON.stringify(cst.children));
+      throw new Error('Invalid assignment target');
+    }
+
     const value = this.visitExpression(
       cst.children.expression[0] as IEC61131CstNode
     );
+
     return {
       $type: 'Assignment',
       target,
@@ -463,6 +529,13 @@ export class IEC61131Visitor {
   }
 
   private visitExpression(cst: IEC61131CstNode): Expression {
+    // Handle expression hierarchical structure
+    if (cst.children?.orExpression) {
+      return this.visitOrExpression(
+        cst.children.orExpression[0] as IEC61131CstNode
+      );
+    }
+
     if (cst.children?.binaryExpr) {
       return this.visitBinaryExpr(
         cst.children.binaryExpr[0] as IEC61131CstNode
@@ -483,6 +556,334 @@ export class IEC61131Visitor {
       return this.visitVariableRef(cst);
     }
     return this.visitPrimaryExpression(cst);
+  }
+
+  private visitOrExpression(cst: IEC61131CstNode): Expression {
+    // Handle AND expressions first
+    if (cst.children?.andExpression) {
+      return this.visitAndExpression(
+        cst.children.andExpression[0] as IEC61131CstNode
+      );
+    }
+
+    // If we have multiple OR expressions, they should be structured as binary expressions
+    if (cst.children?.orExpression && cst.children?.OR) {
+      const left = this.visitOrExpression(
+        cst.children.orExpression[0] as IEC61131CstNode
+      );
+      const right = this.visitAndExpression(
+        cst.children.andExpression[0] as IEC61131CstNode
+      );
+
+      return {
+        $type: 'BinaryExpression',
+        left: left as PrimaryExpression,
+        operator: 'OR',
+        right,
+      };
+    }
+
+    // Default case - just return the AND expression
+    return this.visitAndExpression(
+      cst.children?.andExpression[0] as IEC61131CstNode
+    );
+  }
+
+  private visitAndExpression(cst: IEC61131CstNode): Expression {
+    // Check if we have relational expressions
+    if (cst.children?.relationalExpression) {
+      return this.visitRelationalExpression(
+        cst.children.relationalExpression[0] as IEC61131CstNode
+      );
+    }
+
+    // If we have multiple AND expressions, they should be structured as binary expressions
+    if (cst.children?.andExpression && cst.children?.AND) {
+      const left = this.visitAndExpression(
+        cst.children.andExpression[0] as IEC61131CstNode
+      );
+      const right = this.visitRelationalExpression(
+        cst.children.relationalExpression[0] as IEC61131CstNode
+      );
+
+      return {
+        $type: 'BinaryExpression',
+        left: left as PrimaryExpression,
+        operator: 'AND',
+        right,
+      };
+    }
+
+    // Default case - just return the relational expression
+    return this.visitRelationalExpression(
+      cst.children?.relationalExpression[0] as IEC61131CstNode
+    );
+  }
+
+  private visitRelationalExpression(cst: IEC61131CstNode): Expression {
+    // Handle additive expressions first
+    if (cst.children?.additiveExpression) {
+      const additiveExprs = cst.children.additiveExpression;
+
+      // If we have a single additive expression, just visit it
+      if (additiveExprs.length === 1) {
+        return this.visitAdditiveExpression(
+          additiveExprs[0] as IEC61131CstNode
+        );
+      }
+
+      // If we have a relational operator (=, <>, <, >, etc.) and two additive expressions
+      if (additiveExprs.length === 2 && cst.children?.relationalOp) {
+        const left = this.visitAdditiveExpression(
+          additiveExprs[0] as IEC61131CstNode
+        );
+        const right = this.visitAdditiveExpression(
+          additiveExprs[1] as IEC61131CstNode
+        );
+        const operator = (cst.children.relationalOp[0] as IToken)
+          .image as BinaryOperator;
+
+        return {
+          $type: 'BinaryExpression',
+          left: left as PrimaryExpression,
+          operator,
+          right,
+        };
+      }
+    }
+
+    // If we didn't match a specific pattern, try to visit the additive expression
+    if (cst.children?.additiveExpression) {
+      return this.visitAdditiveExpression(
+        cst.children.additiveExpression[0] as IEC61131CstNode
+      );
+    }
+
+    // If we don't have any additive expressions, this is probably an error
+    console.error(
+      'Unable to process relational expression:',
+      JSON.stringify(cst.children, null, 2)
+    );
+    throw new Error('Invalid relational expression structure');
+  }
+
+  private visitAdditiveExpression(cst: IEC61131CstNode): Expression {
+    // Check if we have multiplicative expressions
+    if (cst.children?.multiplicativeExpression) {
+      const multExprs = cst.children.multiplicativeExpression;
+
+      // If we have a single multiplicative expression, just visit it
+      if (multExprs.length === 1) {
+        return this.visitMultiplicativeExpression(
+          multExprs[0] as IEC61131CstNode
+        );
+      }
+
+      // If we have an additive operator (+, -) and two multiplicative expressions
+      if (multExprs.length === 2 && cst.children?.additiveOp) {
+        const left = this.visitMultiplicativeExpression(
+          multExprs[0] as IEC61131CstNode
+        );
+        const right = this.visitMultiplicativeExpression(
+          multExprs[1] as IEC61131CstNode
+        );
+        const operator = (cst.children.additiveOp[0] as IToken)
+          .image as BinaryOperator;
+
+        return {
+          $type: 'BinaryExpression',
+          left: left as PrimaryExpression,
+          operator,
+          right,
+        };
+      }
+    }
+
+    // If we didn't match a specific pattern, try to visit the multiplicative expression
+    if (cst.children?.multiplicativeExpression) {
+      return this.visitMultiplicativeExpression(
+        cst.children.multiplicativeExpression[0] as IEC61131CstNode
+      );
+    }
+
+    // If we don't have any multiplicative expressions, this is probably an error
+    console.error(
+      'Unable to process additive expression:',
+      JSON.stringify(cst.children, null, 2)
+    );
+    throw new Error('Invalid additive expression structure');
+  }
+
+  private visitMultiplicativeExpression(cst: IEC61131CstNode): Expression {
+    // Check if we have unary expressions
+    if (cst.children?.unaryExpression) {
+      const unaryExprs = cst.children.unaryExpression;
+
+      // If we have a single unary expression, just visit it
+      if (unaryExprs.length === 1) {
+        return this.visitNestedUnaryExpr(unaryExprs[0] as IEC61131CstNode);
+      }
+
+      // If we have a multiplicative operator (*, /, MOD) and two unary expressions
+      if (unaryExprs.length === 2 && cst.children?.multiplicativeOp) {
+        const left = this.visitNestedUnaryExpr(
+          unaryExprs[0] as IEC61131CstNode
+        );
+        const right = this.visitNestedUnaryExpr(
+          unaryExprs[1] as IEC61131CstNode
+        );
+        const operator = (cst.children.multiplicativeOp[0] as IToken)
+          .image as BinaryOperator;
+
+        return {
+          $type: 'BinaryExpression',
+          left: left as PrimaryExpression,
+          operator,
+          right,
+        };
+      }
+    }
+
+    // If we didn't match a specific pattern, try to visit the unary expression
+    if (cst.children?.unaryExpression) {
+      return this.visitNestedUnaryExpr(
+        cst.children.unaryExpression[0] as IEC61131CstNode
+      );
+    }
+
+    // If we don't have any unary expressions, this is probably an error
+    console.error(
+      'Unable to process multiplicative expression:',
+      JSON.stringify(cst.children, null, 2)
+    );
+    throw new Error('Invalid multiplicative expression structure');
+  }
+
+  private visitNestedUnaryExpr(cst: IEC61131CstNode): Expression {
+    // Check if we have a unary operator (NOT, -)
+    if (cst.children?.unaryOp) {
+      const operator = (cst.children.unaryOp[0] as IToken)
+        .image as UnaryOperator;
+      const operand = this.visitNestedPrimaryExpr(
+        cst.children.primaryExpression[0] as IEC61131CstNode
+      );
+
+      return {
+        $type: 'UnaryExpression',
+        operator,
+        operand: operand as PrimaryExpression,
+      };
+    }
+
+    // If we don't have a unary operator, just visit the primary expression
+    if (cst.children?.primaryExpression) {
+      return this.visitNestedPrimaryExpr(
+        cst.children.primaryExpression[0] as IEC61131CstNode
+      );
+    }
+
+    // If we don't have a primary expression, this is probably an error
+    console.error(
+      'Unable to process unary expression:',
+      JSON.stringify(cst.children, null, 2)
+    );
+    throw new Error('Invalid unary expression structure');
+  }
+
+  private visitNestedPrimaryExpr(cst: IEC61131CstNode): Expression {
+    // Handle number literals
+    if (cst.children?.NUMBER) {
+      const numberToken = cst.children.NUMBER[0] as IToken;
+      return {
+        $type: 'Literal',
+        value: Number(numberToken.image),
+      };
+    }
+
+    // Handle string literals
+    if (cst.children?.STRING) {
+      const stringToken = cst.children.STRING[0] as IToken;
+      return {
+        $type: 'Literal',
+        value: stringToken.image,
+      };
+    }
+
+    // Handle time literals
+    if (cst.children?.TIME_LITERAL) {
+      const timeToken = cst.children.TIME_LITERAL[0] as IToken;
+      return {
+        $type: 'Literal',
+        value: timeToken.image,
+      };
+    }
+
+    // Handle variable references
+    if (cst.children?.IDENTIFIER) {
+      return {
+        $type: 'VariableReference',
+        elements: [
+          {
+            $type: 'ElementAccess',
+            member: (cst.children.IDENTIFIER[0] as IToken).image,
+          },
+        ],
+      };
+    }
+
+    // Handle boolean literals
+    if (cst.children?.TRUE) {
+      return {
+        $type: 'Literal',
+        value: true,
+      };
+    }
+
+    if (cst.children?.FALSE) {
+      return {
+        $type: 'Literal',
+        value: false,
+      };
+    }
+
+    // Handle parenthesized expressions
+    if (cst.children?.parenExpr) {
+      return this.visitParenExpr(cst.children.parenExpr[0] as IEC61131CstNode);
+    }
+
+    // Handle function calls
+    if (cst.children?.functionCall) {
+      return this.visitFunctionCall(
+        cst.children.functionCall[0] as IEC61131CstNode
+      );
+    }
+
+    // Handle direct addresses as literals
+    if (cst.children?.DIRECT_ADDRESS) {
+      const addressToken = cst.children.DIRECT_ADDRESS[0] as IToken;
+      return {
+        $type: 'Literal',
+        value: addressToken.image,
+      };
+    }
+
+    // Handle variableAccess
+    if (cst.children?.variableAccess) {
+      return this.visitVariableAccess(
+        cst.children.variableAccess[0] as IEC61131CstNode
+      );
+    }
+
+    // If we get here, we have an expression type we can't handle
+    console.error(
+      'Unknown nested primary expression:',
+      JSON.stringify(cst.children, null, 2)
+    );
+    throw new Error(
+      `Unknown nested primary expression type: ${Object.keys(
+        cst.children || {}
+      ).join(', ')}`
+    );
   }
 
   private visitBinaryExpr(cst: IEC61131CstNode): BinaryExpression {
@@ -518,16 +919,36 @@ export class IEC61131Visitor {
   }
 
   private visitFunctionCall(cst: IEC61131CstNode): FunctionCallExpression {
-    const functionName = (cst.children?.IDENTIFIER[0] as IToken).image;
+    let functionName: string;
+
+    // Check if IDENTIFIER is present
+    if (!cst.children?.IDENTIFIER || cst.children.IDENTIFIER.length === 0) {
+      console.error(
+        'Function call missing identifier:',
+        JSON.stringify(cst.children, null, 2)
+      );
+
+      // Use a default name for logging/debugging purposes
+      functionName = 'unknown';
+
+      // If we have a name property and it's an IToken with an image property
+      if (
+        cst.children?.name &&
+        cst.children.name[0] &&
+        'image' in cst.children.name[0]
+      ) {
+        functionName = (cst.children.name[0] as IToken).image;
+      }
+    } else {
+      // Normal case - we have an identifier
+      functionName = (cst.children.IDENTIFIER[0] as IToken).image;
+    }
 
     // Process arguments
     const args: Argument[] = [];
-    if (cst.children?.argumentList) {
-      const argListNode = cst.children.argumentList[0] as IEC61131CstNode;
-      if (argListNode.children?.argument) {
-        for (const arg of argListNode.children.argument) {
-          args.push(this.visitArgument(arg as IEC61131CstNode));
-        }
+    if (cst.children?.functionArgument) {
+      for (const argNode of cst.children.functionArgument) {
+        args.push(this.visitFunctionArgument(argNode as IEC61131CstNode));
       }
     }
 
@@ -535,10 +956,70 @@ export class IEC61131Visitor {
       $type: 'FunctionCallExpression',
       call: {
         $type: 'Call',
-        func: undefined, // Will be resolved during semantic analysis
+        func: undefined, // Will be resolved during semantic analysis, keep as undefined
         args,
       },
     };
+  }
+
+  private visitFunctionArgument(cst: IEC61131CstNode): Argument {
+    // Check if we have a named or positional argument
+    if (cst.children?.namedArgument) {
+      return this.visitNamedArgument(
+        cst.children.namedArgument[0] as IEC61131CstNode
+      );
+    } else if (cst.children?.positionalArgument) {
+      return this.visitPositionalArgument(
+        cst.children.positionalArgument[0] as IEC61131CstNode
+      );
+    } else {
+      throw new Error('Invalid function argument structure');
+    }
+  }
+
+  private visitNamedArgument(cst: IEC61131CstNode): Argument {
+    const name = (cst.children?.paramName[0] as IToken).image;
+    const value = this.visitArgumentValue(
+      cst.children?.value[0] as IEC61131CstNode
+    );
+
+    return {
+      $type: 'Argument',
+      name,
+      value,
+    };
+  }
+
+  private visitPositionalArgument(cst: IEC61131CstNode): Argument {
+    const value = this.visitArgumentValue(
+      cst.children?.value[0] as IEC61131CstNode
+    );
+
+    return {
+      $type: 'Argument',
+      name: undefined,
+      value,
+    };
+  }
+
+  private visitArgumentValue(cst: IEC61131CstNode): Expression {
+    if (cst.children?.timeLiteral) {
+      return {
+        $type: 'Literal',
+        value: (cst.children.timeLiteral[0] as IToken).image,
+      };
+    } else if (cst.children?.directAddress) {
+      return {
+        $type: 'Literal',
+        value: (cst.children.directAddress[0] as IToken).image,
+      };
+    } else if (cst.children?.expression) {
+      return this.visitExpression(
+        cst.children.expression[0] as IEC61131CstNode
+      );
+    } else {
+      throw new Error('Invalid argument value');
+    }
   }
 
   private visitParenExpr(cst: IEC61131CstNode): ParenExpression {
@@ -559,160 +1040,128 @@ export class IEC61131Visitor {
     };
   }
 
-  private visitPrimaryExpression(cst: IEC61131CstNode): PrimaryExpression {
+  private visitPrimaryExpression(cst: IEC61131CstNode): Expression {
+    // Handle number literals
     if (cst.children?.NUMBER) {
+      const numberToken = cst.children.NUMBER[0] as IToken;
       return {
         $type: 'Literal',
-        value: Number((cst.children.NUMBER[0] as IToken).image),
+        value: Number(numberToken.image),
       };
     }
+
+    // Handle string literals
     if (cst.children?.STRING) {
+      const stringToken = cst.children.STRING[0] as IToken;
       return {
         $type: 'Literal',
-        value: (cst.children.STRING[0] as IToken).image,
+        value: stringToken.image,
       };
     }
-    if (cst.children?.DIRECT_ADDRESS) {
+
+    // Handle time literals
+    if (cst.children?.TIME_LITERAL) {
+      const timeToken = cst.children.TIME_LITERAL[0] as IToken;
       return {
         $type: 'Literal',
-        value: (cst.children.DIRECT_ADDRESS[0] as IToken).image,
+        value: timeToken.image,
       };
     }
+
+    // Handle variable references
+    if (cst.children?.IDENTIFIER) {
+      return {
+        $type: 'VariableReference',
+        elements: [
+          {
+            $type: 'ElementAccess',
+            member: (cst.children.IDENTIFIER[0] as IToken).image,
+          },
+        ],
+      };
+    }
+
+    // Handle boolean literals
     if (cst.children?.TRUE) {
       return {
         $type: 'Literal',
         value: true,
       };
     }
+
     if (cst.children?.FALSE) {
       return {
         $type: 'Literal',
         value: false,
       };
     }
+
+    // Handle parenthesized expressions
+    if (cst.children?.parenExpr) {
+      return this.visitParenExpr(cst.children.parenExpr[0] as IEC61131CstNode);
+    }
+
+    // Handle function calls
     if (cst.children?.functionCall) {
-      const functionCall = cst.children.functionCall[0] as IEC61131CstNode;
-      const name = (functionCall.children.IDENTIFIER[0] as IToken).image;
-      const args: Argument[] = [];
+      return this.visitFunctionCall(
+        cst.children.functionCall[0] as IEC61131CstNode
+      );
+    }
 
-      // Process arguments
-      if (functionCall.children?.argumentList) {
-        const argListNode = functionCall.children
-          .argumentList[0] as IEC61131CstNode;
-        if (argListNode.children?.argument) {
-          for (const argNode of argListNode.children.argument) {
-            const arg = argNode as IEC61131CstNode;
-            let value: Expression;
-            let name: string | undefined;
-
-            // Check for named argument
-            if (arg.children?.IDENTIFIER && arg.children?.ASSIGN) {
-              name = (arg.children.IDENTIFIER[0] as IToken).image;
-
-              // Handle direct address
-              if (arg.children.DIRECT_ADDRESS) {
-                value = {
-                  $type: 'Literal',
-                  value: (arg.children.DIRECT_ADDRESS[0] as IToken).image,
-                };
-              }
-              // Handle expression
-              else if (arg.children.expression) {
-                value = this.visitExpression(
-                  arg.children.expression[0] as IEC61131CstNode
-                );
-              } else {
-                throw new Error('Missing value for named argument');
-              }
-            }
-            // Handle positional argument
-            else {
-              // Direct address
-              if (arg.children?.DIRECT_ADDRESS) {
-                value = {
-                  $type: 'Literal',
-                  value: (arg.children.DIRECT_ADDRESS[0] as IToken).image,
-                };
-              }
-              // Expression
-              else if (arg.children?.expression) {
-                value = this.visitExpression(
-                  arg.children.expression[0] as IEC61131CstNode
-                );
-              } else {
-                throw new Error('Missing value for positional argument');
-              }
-            }
-
-            args.push({
-              $type: 'Argument',
-              name,
-              value,
-            });
-          }
-        }
-      }
-
+    // Handle direct addresses as literals
+    if (cst.children?.DIRECT_ADDRESS) {
+      const addressToken = cst.children.DIRECT_ADDRESS[0] as IToken;
       return {
-        $type: 'FunctionCallExpression',
-        call: {
-          $type: 'Call',
-          args,
-        },
+        $type: 'Literal',
+        value: addressToken.image,
       };
     }
 
-    // Handle variable access
+    // Handle variableAccess
     if (cst.children?.variableAccess) {
-      return this.visitVariableRef(
+      return this.visitVariableAccess(
         cst.children.variableAccess[0] as IEC61131CstNode
       );
     }
 
-    // Handle parenthesized expression
-    if (
-      cst.children?.LPAREN &&
-      cst.children?.expression &&
-      cst.children?.RPAREN
-    ) {
-      return {
-        $type: 'ParenExpression',
-        expr: this.visitExpression(
-          cst.children.expression[0] as IEC61131CstNode
-        ),
-      };
-    }
-
-    throw new Error('Unknown primary expression type');
+    // If we get here, we have an expression type we can't handle
+    console.error(
+      'Unknown primary expression:',
+      JSON.stringify(cst.children, null, 2)
+    );
+    throw new Error(
+      `Unknown primary expression type: ${Object.keys(cst.children || {}).join(
+        ', '
+      )}`
+    );
   }
 
-  private visitArgument(cst: IEC61131CstNode): Argument {
-    // Check if we have a named parameter (paramName label)
-    const paramName = cst.children?.paramName?.[0] as IToken;
-    const name = paramName ? paramName.image : undefined;
+  private visitVariableAccess(cst: IEC61131CstNode): VariableReference {
+    console.log('Visiting variable access:', JSON.stringify(cst.children));
 
-    // Get the argument value - either direct address or expression
-    let value: Expression;
+    const elements: ElementAccess[] = [];
 
-    if (cst.children?.DIRECT_ADDRESS) {
-      // Direct address as value
-      value = {
-        $type: 'Literal',
-        value: (cst.children.DIRECT_ADDRESS[0] as IToken).image,
-      };
-    } else if (cst.children?.expression) {
-      // Expression as value
-      value = this.visitExpression(
-        cst.children.expression[0] as IEC61131CstNode
-      );
-    } else {
-      throw new Error('Missing value for argument');
+    if (cst.children?.IDENTIFIER) {
+      // Add the first identifier as the base variable
+      elements.push({
+        $type: 'ElementAccess',
+        member: (cst.children.IDENTIFIER[0] as IToken).image,
+      });
+
+      // Add additional identifiers as dot-accessed members
+      if (cst.children.IDENTIFIER.length > 1) {
+        for (let i = 1; i < cst.children.IDENTIFIER.length; i++) {
+          elements.push({
+            $type: 'ElementAccess',
+            member: (cst.children.IDENTIFIER[i] as IToken).image,
+          });
+        }
+      }
     }
 
     return {
-      $type: 'Argument',
-      name,
-      value,
+      $type: 'VariableReference',
+      elements: elements,
     };
   }
 }
