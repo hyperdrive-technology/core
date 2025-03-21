@@ -4,14 +4,6 @@ import { toast } from 'sonner';
 import { useIECCompiler } from '../hooks/useIECCompiler';
 import { IECFile } from '../utils/iec-file-loader';
 import { Badge } from './ui/badge';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from './ui/card';
 
 interface CompilePanelProps {
   files?: IECFile[];
@@ -254,9 +246,8 @@ export function CompilePanel({
         const jsonStr = JSON.stringify(compilationResult.ast, null, 2);
         // Split the JSON into lines and add each line to the logs
         const jsonLines = jsonStr.split('\n');
-        for (const line of jsonLines) {
-          setLogs((prev) => [...prev, `  ${line}`]);
-        }
+        // Add all JSON lines at once to preserve indentation
+        setLogs((prev) => [...prev, ...jsonLines.map((line) => `  ${line}`)]);
       } catch (error) {
         setLogs((prev) => [
           ...prev,
@@ -284,129 +275,77 @@ export function CompilePanel({
   }, []);
 
   return (
-    <Card className="w-full">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center justify-between">
-          IEC-61131 Compiler
-          <div className="flex items-center space-x-2">
-            <span className="text-xs">
-              Status: <Badge variant="outline">{status}</Badge>
-            </span>
+    <div className="bg-slate-900 text-slate-50 dark:bg-slate-950 p-4 rounded-md h-80 overflow-y-auto mb-4 border border-slate-700">
+      <h3 className="text-sm font-semibold mb-2 text-slate-300">
+        Compilation Output:
+      </h3>
+      <div className="space-y-1">
+        {logs.map((log, index) => {
+          // Style different types of logs
+          let className = 'text-xs font-mono';
+
+          if (log.includes('❌')) className += ' text-red-400';
+          else if (log.includes('⚠️')) className += ' text-yellow-400';
+          else if (log.includes('✅')) className += ' text-green-400';
+          else if (log.startsWith('  ')) className += ' text-slate-400';
+
+          return (
+            <div key={index} className={className}>
+              {log}
+            </div>
+          );
+        })}
+      </div>
+      {/* Only show results if available */}
+      {result && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Compilation Results</h3>
+            <Badge variant={result.success ? 'default' : 'destructive'}>
+              {result.success ? 'Success' : 'Failed'}
+            </Badge>
           </div>
-        </CardTitle>
-        <CardDescription>
-          Compile and validate IEC-61131 structured text files ({files.length}{' '}
-          file(s) available)
-        </CardDescription>
-      </CardHeader>
 
-      <CardContent>
-        {error && (
-          <div className="mb-4 p-3 bg-destructive/20 text-destructive rounded-md">
-            {error}
-          </div>
-        )}
-
-        {/* Debug info */}
-        <div className="mb-4 p-3 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-400 rounded-md">
-          <p>Debug: CompilePanel is rendering with {files.length} files</p>
-          <p>Compiler Status: {status}</p>
-          <p>Has Result: {result ? 'Yes' : 'No'}</p>
-        </div>
-
-        {/* Log output */}
-        <div className="bg-slate-900 text-slate-50 dark:bg-slate-950 p-4 rounded-md h-80 overflow-y-auto mb-4 border border-slate-700">
-          <h3 className="text-sm font-semibold mb-2 text-slate-300">
-            Compilation Output:
-          </h3>
-          {logs.length === 0 ? (
-            <p className="text-slate-400">
-              Use the "Compile All" button in the command bar to start
-              compilation.
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {logs.map((log, index) => {
-                // Style different types of logs
-                let className = 'text-xs font-mono';
-
-                if (log.includes('❌')) className += ' text-red-400';
-                else if (log.includes('⚠️')) className += ' text-yellow-400';
-                else if (log.includes('✅')) className += ' text-green-400';
-                else if (log.startsWith('  ')) className += ' text-slate-400';
-
-                return (
-                  <div key={index} className={className}>
-                    {log}
+          {/* Display diagnostics summary */}
+          {result.diagnostics && (
+            <div>
+              <h4 className="text-sm font-medium mb-2">Diagnostics:</h4>
+              {result.diagnostics.map((fileDiag, fileIndex) => (
+                <div key={fileIndex} className="mb-3">
+                  <div className="flex items-center">
+                    <FileCode className="h-4 w-4 mr-2" />
+                    <span className="text-sm font-medium">
+                      {fileDiag.fileName}
+                    </span>
                   </div>
-                );
-              })}
+
+                  {fileDiag.diagnostics.length === 0 ? (
+                    <p className="text-xs text-success ml-6 mt-1">
+                      No issues found
+                    </p>
+                  ) : (
+                    <div className="ml-6 mt-1 space-y-1">
+                      {fileDiag.diagnostics.map((diag, diagIndex) => (
+                        <div
+                          key={diagIndex}
+                          className={`text-xs ${
+                            diag.severity === 'error'
+                              ? 'text-destructive'
+                              : 'text-warning'
+                          }`}
+                        >
+                          {diag.severity === 'error' ? '❌' : '⚠️'} Line{' '}
+                          {diag.line}, Col {diag.column}: {diag.message}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
-
-        {/* Only show results if available */}
-        {result && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Compilation Results</h3>
-              <Badge variant={result.success ? 'default' : 'destructive'}>
-                {result.success ? 'Success' : 'Failed'}
-              </Badge>
-            </div>
-
-            {/* Display diagnostics summary */}
-            {result.diagnostics && (
-              <div>
-                <h4 className="text-sm font-medium mb-2">Diagnostics:</h4>
-                {result.diagnostics.map((fileDiag, fileIndex) => (
-                  <div key={fileIndex} className="mb-3">
-                    <div className="flex items-center">
-                      <FileCode className="h-4 w-4 mr-2" />
-                      <span className="text-sm font-medium">
-                        {fileDiag.fileName}
-                      </span>
-                    </div>
-
-                    {fileDiag.diagnostics.length === 0 ? (
-                      <p className="text-xs text-success ml-6 mt-1">
-                        No issues found
-                      </p>
-                    ) : (
-                      <div className="ml-6 mt-1 space-y-1">
-                        {fileDiag.diagnostics.map((diag, diagIndex) => (
-                          <div
-                            key={diagIndex}
-                            className={`text-xs ${
-                              diag.severity === 'error'
-                                ? 'text-destructive'
-                                : 'text-warning'
-                            }`}
-                          >
-                            {diag.severity === 'error' ? '❌' : '⚠️'} Line{' '}
-                            {diag.line}, Col {diag.column}: {diag.message}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </CardContent>
-
-      <CardFooter className="flex justify-between">
-        <div className="text-xs text-muted-foreground">
-          {status === 'idle' && 'Ready to compile'}
-          {status === 'compiling' && 'Compiling...'}
-          {status === 'success' &&
-            result?.success &&
-            `Successfully compiled ${result.fileCount} file(s)`}
-          {status === 'error' && 'Compilation failed'}
-        </div>
-      </CardFooter>
-    </Card>
+      )}
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import { CstNode, IToken } from 'chevrotain';
 import type {
   Argument,
+  ArrayDimension,
   Assignment,
   BinaryExpression,
   BinaryOperator,
@@ -22,8 +23,10 @@ import type {
   ProgramDecl,
   RepeatStatement,
   ReturnStatement,
+  SimpleType,
   Statement,
   TypeDecl,
+  TypeDeclaration,
   UnaryExpression,
   UnaryOperator,
   VarDeclaration,
@@ -48,6 +51,7 @@ export class IEC61131Visitor {
       const program: Program = {
         $type: 'Program',
         enumTypes: this.visitEnumTypes(cst),
+        structTypes: this.visitStructTypes(cst),
         functionBlocks: this.visitFunctionBlocks(cst),
         functions: this.visitFunctions(cst),
         programs: this.visitPrograms(cst),
@@ -98,6 +102,50 @@ export class IEC61131Visitor {
     };
   }
 
+  private visitStructTypes(cst: IEC61131CstNode): any[] {
+    const structTypes: any[] = [];
+    if (cst.children?.structType) {
+      for (const structType of cst.children.structType) {
+        structTypes.push(this.visitStructType(structType as IEC61131CstNode));
+      }
+    }
+    return structTypes;
+  }
+
+  private visitStructType(cst: IEC61131CstNode): any {
+    const name = (cst.children?.IDENTIFIER[0] as IToken).image;
+    const members: any[] = [];
+
+    // Process struct members
+    if (cst.children?.IDENTIFIER && cst.children.IDENTIFIER.length > 1) {
+      const dataTypes = cst.children?.dataType || [];
+      const expressions = cst.children?.expression || [];
+
+      for (let i = 1; i < cst.children.IDENTIFIER.length; i++) {
+        const memberName = (cst.children.IDENTIFIER[i] as IToken).image;
+        const memberType = dataTypes[i - 1]
+          ? this.visitDataType(dataTypes[i - 1] as IEC61131CstNode)
+          : { $type: 'SimpleType', name: 'UNKNOWN' };
+        const initialValue = expressions[i - 1]
+          ? this.visitExpression(expressions[i - 1] as IEC61131CstNode)
+          : undefined;
+
+        members.push({
+          $type: 'StructMember',
+          name: memberName,
+          type: memberType,
+          initialValue,
+        });
+      }
+    }
+
+    return {
+      $type: 'StructType',
+      name,
+      members,
+    };
+  }
+
   private visitFunctionBlocks(cst: IEC61131CstNode): FunctionBlock[] {
     const functionBlocks: FunctionBlock[] = [];
     if (cst.children?.functionBlock) {
@@ -133,18 +181,48 @@ export class IEC61131Visitor {
 
   private visitFunctionDef(cst: IEC61131CstNode): FunctionDef {
     const name = (cst.children?.IDENTIFIER[0] as IToken).image;
-    const returnType = this.visitDataType(
-      cst.children?.dataType?.[0] as IEC61131CstNode
-    );
+
+    // Default void return type
+    let returnType: TypeDecl = {
+      $type: 'SimpleType',
+      name: 'VOID',
+    };
+
+    if (cst.children?.dataType && cst.children.dataType.length > 0) {
+      returnType = this.visitDataType(
+        cst.children.dataType[0] as IEC61131CstNode
+      );
+    }
+
     const varDeclarations = this.visitVarDeclarations(cst);
-    const body = this.visitProgramBody(cst);
+
+    // Process inner type declarations
+    const innerTypes: TypeDeclaration[] = [];
+    if (cst.children?.innerTypeDeclaration) {
+      for (const innerType of cst.children.innerTypeDeclaration) {
+        innerTypes.push(
+          this.visitInnerTypeDeclaration(innerType as IEC61131CstNode)
+        );
+      }
+    }
+
+    const statements: Statement[] = [];
+    if (cst.children?.statement) {
+      for (const stmt of cst.children.statement) {
+        statements.push(this.visitStatement(stmt as IEC61131CstNode));
+      }
+    }
 
     return {
       $type: 'FunctionDef',
       name,
       returnType,
       varDeclarations,
-      body,
+      innerTypes, // Add inner types to function definition
+      body: {
+        $type: 'ProgramBody',
+        statements,
+      },
     };
   }
 
@@ -201,9 +279,43 @@ export class IEC61131Visitor {
     const type = this.visitDataType(
       cst.children?.dataType?.[0] as IEC61131CstNode
     );
-    const initialValue = cst.children?.expression?.[0]
-      ? this.visitExpression(cst.children.expression[0] as IEC61131CstNode)
-      : undefined;
+
+    let initialValue: Expression | undefined;
+
+    // Check for range constraints
+    let rangeStart: Expression | undefined;
+    let rangeEnd: Expression | undefined;
+
+    if (cst.children?.rangeStart?.[0]) {
+      rangeStart = this.visitExpression(
+        cst.children.rangeStart[0] as IEC61131CstNode
+      );
+    }
+
+    if (cst.children?.rangeEnd?.[0]) {
+      rangeEnd = this.visitExpression(
+        cst.children.rangeEnd[0] as IEC61131CstNode
+      );
+    }
+
+    // Add range constraints to the type if present
+    if (rangeStart && rangeEnd && type.$type === 'SimpleType') {
+      type.rangeConstraint = {
+        start: rangeStart,
+        end: rangeEnd,
+      };
+    }
+
+    // Check for arrayInitializer
+    if (cst.children?.arrayInitializer) {
+      initialValue = this.visitArrayInitializer(
+        cst.children.arrayInitializer[0] as IEC61131CstNode
+      );
+    } else if (cst.children?.expression?.[0]) {
+      initialValue = this.visitExpression(
+        cst.children.expression[0] as IEC61131CstNode
+      );
+    }
 
     return {
       $type: 'VariableDecl',
@@ -216,6 +328,21 @@ export class IEC61131Visitor {
   private visitDataType(cst: IEC61131CstNode | undefined): TypeDecl {
     if (!cst) {
       return { $type: 'SimpleType', name: 'VOID' };
+    }
+
+    // Handle direct type keywords (like TON, TOF, TP)
+    // Check for timer types directly in the CST node
+    if (cst.children?.TON || cst.children?.TOF || cst.children?.TP) {
+      const timerType = cst.children?.TON
+        ? 'TON'
+        : cst.children?.TOF
+        ? 'TOF'
+        : 'TP';
+
+      return {
+        $type: 'SimpleType',
+        name: timerType,
+      };
     }
 
     if (cst.children?.IDENTIFIER) {
@@ -233,8 +360,47 @@ export class IEC61131Visitor {
   }
 
   private visitArrayType(cst: IEC61131CstNode): TypeDecl {
-    // Implementation depends on your array type syntax
-    throw new Error('Array type not implemented yet');
+    // Get array dimensions (start and end ranges)
+    const startExpr = this.visitExpression(
+      cst.children.expression[0] as IEC61131CstNode
+    );
+    const endExpr = this.visitExpression(
+      cst.children.expression[1] as IEC61131CstNode
+    );
+
+    // Get element type
+    const elementType = this.visitDataType(
+      cst.children.dataType[0] as IEC61131CstNode
+    );
+
+    // Extract dimension values, ensuring they are of the correct type
+    let startValue: number | string = 0;
+    let endValue: number | string = 0;
+
+    if (startExpr.$type === 'Literal') {
+      const val = startExpr.value;
+      startValue =
+        typeof val === 'number' ? val : typeof val === 'string' ? val : 0;
+    }
+
+    if (endExpr.$type === 'Literal') {
+      const val = endExpr.value;
+      endValue =
+        typeof val === 'number' ? val : typeof val === 'string' ? val : 0;
+    }
+
+    // Create an array dimension
+    const dimension: ArrayDimension = {
+      $type: 'ArrayDimension',
+      start: startValue,
+      end: endValue,
+    };
+
+    return {
+      $type: 'ArrayType',
+      dimensions: [dimension],
+      type: elementType,
+    };
   }
 
   private visitProgramBody(cst: IEC61131CstNode): ProgramBody {
@@ -273,9 +439,24 @@ export class IEC61131Visitor {
     if (cst.children?.caseStmt) {
       return this.visitCaseStmt(cst.children.caseStmt[0] as IEC61131CstNode);
     }
+    if (cst.children?.functionCall) {
+      const functionCallExpr = this.visitFunctionCall(
+        cst.children.functionCall[0] as IEC61131CstNode
+      );
+      // Convert FunctionCallExpression to FunctionCall statement
+      return {
+        $type: 'FunctionCall',
+        call: functionCallExpr.call,
+      };
+    }
     if (cst.children?.returnStmt) {
       return this.visitReturnStmt(
         cst.children.returnStmt[0] as IEC61131CstNode
+      );
+    }
+    if (cst.children?.typeDeclaration) {
+      return this.visitTypeDeclaration(
+        cst.children.typeDeclaration[0] as IEC61131CstNode
       );
     }
     throw new Error('Unknown statement type');
@@ -480,30 +661,68 @@ export class IEC61131Visitor {
     const caseLabels: Expression[] = [];
     const caseStatements: Statement[] = [];
 
-    const defaultStatements: Statement[] = [];
-    if (cst.children?.ELSE && cst.children?.statement) {
-      const elseIndex = cst.children.ELSE.indexOf(cst.children.ELSE[0]);
-      if (elseIndex !== -1 && cst.children.statement.length > elseIndex) {
-        for (let i = elseIndex; i < cst.children.statement.length; i++) {
-          defaultStatements.push(
-            this.visitStatement(cst.children.statement[i] as IEC61131CstNode)
-          );
-        }
+    // Handle numeric case labels
+    if (cst.children?.NUMBER) {
+      for (const numToken of cst.children.NUMBER) {
+        caseLabels.push({
+          $type: 'Literal',
+          value: Number((numToken as IToken).image),
+        });
       }
     }
 
+    // Handle expression case labels
     if (cst.children?.expression && cst.children.expression.length > 1) {
       for (let i = 1; i < cst.children.expression.length; i++) {
         caseLabels.push(
           this.visitExpression(cst.children.expression[i] as IEC61131CstNode)
         );
+      }
+    }
 
-        if (cst.children?.statement && i < cst.children.statement.length) {
-          caseStatements.push(
-            this.visitStatement(
-              cst.children.statement[i - 1] as IEC61131CstNode
+    // Process all statements for each case branch
+    // This is a simplification as we're not tracking which statements belong to which label
+    const defaultStatements: Statement[] = [];
+
+    if (cst.children?.statement) {
+      // If ELSE is present, put statements after ELSE into defaultStatements
+      if (cst.children?.ELSE) {
+        const elseIndex = cst.children.statement.findIndex((_, index) => {
+          return (
+            index > 0 &&
+            cst.children?.ELSE &&
+            cst.children.ELSE.some(
+              (elseToken) =>
+                (elseToken as IToken).startOffset <
+                (cst.children?.statement[index] as any).location?.startOffset
             )
           );
+        });
+
+        if (elseIndex !== -1) {
+          // Statements before ELSE go into case statements
+          for (let i = 0; i < elseIndex; i++) {
+            caseStatements.push(
+              this.visitStatement(cst.children.statement[i] as IEC61131CstNode)
+            );
+          }
+
+          // Statements after ELSE go into default statements
+          for (let i = elseIndex; i < cst.children.statement.length; i++) {
+            defaultStatements.push(
+              this.visitStatement(cst.children.statement[i] as IEC61131CstNode)
+            );
+          }
+        } else {
+          // If we can't determine the ELSE position, put all statements in case statements
+          for (const stmt of cst.children.statement) {
+            caseStatements.push(this.visitStatement(stmt as IEC61131CstNode));
+          }
+        }
+      } else {
+        // If there's no ELSE, all statements are case statements
+        for (const stmt of cst.children.statement) {
+          caseStatements.push(this.visitStatement(stmt as IEC61131CstNode));
         }
       }
     }
@@ -525,6 +744,33 @@ export class IEC61131Visitor {
     return {
       $type: 'ReturnStatement',
       value,
+    };
+  }
+
+  private visitTypeDeclaration(cst: IEC61131CstNode): Statement {
+    const identifier = (cst.children?.IDENTIFIER[0] as IToken).image;
+    let dataType: SimpleType | undefined;
+    let initialValue: Expression | undefined;
+
+    // Check if we have a data type defined
+    if (cst.children?.dataType?.[0]) {
+      dataType = this.visitDataType(
+        cst.children.dataType[0] as IEC61131CstNode
+      ) as SimpleType;
+    }
+
+    // Check if we have an initial value
+    if (cst.children?.expression?.[0]) {
+      initialValue = this.visitExpression(
+        cst.children.expression[0] as IEC61131CstNode
+      );
+    }
+
+    return {
+      $type: 'TypeDeclaration',
+      name: identifier,
+      dataType,
+      initialValue,
     };
   }
 
@@ -818,6 +1064,22 @@ export class IEC61131Visitor {
       };
     }
 
+    // Handle array access
+    if (cst.children?.arrayAccess) {
+      return this.visitArrayAccess(
+        cst.children.arrayAccess[0] as IEC61131CstNode
+      );
+    }
+
+    // Handle enum references
+    if (cst.children?.ENUM_REFERENCE) {
+      const enumRef = (cst.children.ENUM_REFERENCE[0] as IToken).image;
+      return {
+        $type: 'EnumReference',
+        value: enumRef,
+      };
+    }
+
     // Handle variable references
     if (cst.children?.IDENTIFIER) {
       return {
@@ -846,7 +1108,21 @@ export class IEC61131Visitor {
       };
     }
 
-    // Handle parenthesized expressions
+    // Handle parenthesized expressions (LPAREN, expression, RPAREN)
+    if (
+      cst.children?.LPAREN &&
+      cst.children?.expression &&
+      cst.children?.RPAREN
+    ) {
+      return {
+        $type: 'ParenExpression',
+        expr: this.visitExpression(
+          cst.children.expression[0] as IEC61131CstNode
+        ),
+      };
+    }
+
+    // Handle parenthesized expressions via parenExpr rule
     if (cst.children?.parenExpr) {
       return this.visitParenExpr(cst.children.parenExpr[0] as IEC61131CstNode);
     }
@@ -920,9 +1196,34 @@ export class IEC61131Visitor {
 
   private visitFunctionCall(cst: IEC61131CstNode): FunctionCallExpression {
     let functionName: string;
+    let objectName: string | undefined;
+    let memberName: string | undefined;
 
-    // Check if IDENTIFIER is present
-    if (!cst.children?.IDENTIFIER || cst.children.IDENTIFIER.length === 0) {
+    // Check if we have a direct function call or an object method call
+    if (cst.children?.objectName && cst.children?.memberName) {
+      // This is an object method call with dot notation (e.g., timer.Q)
+      objectName = (cst.children.objectName[0] as IToken).image;
+      memberName = (cst.children.memberName[0] as IToken).image;
+      functionName = `${objectName}.${memberName}`;
+
+      // For timers, we might not have a function call with parentheses
+      // Example: InletDelay.Q doesn't require arguments
+      if (!cst.children?.functionArgument) {
+        return {
+          $type: 'FunctionCallExpression',
+          call: {
+            $type: 'Call',
+            func: undefined,
+            args: [],
+            object: objectName,
+            member: memberName,
+          },
+        };
+      }
+    } else if (cst.children?.functionName) {
+      // This is a direct function call
+      functionName = (cst.children.functionName[0] as IToken).image;
+    } else {
       console.error(
         'Function call missing identifier:',
         JSON.stringify(cst.children, null, 2)
@@ -939,9 +1240,6 @@ export class IEC61131Visitor {
       ) {
         functionName = (cst.children.name[0] as IToken).image;
       }
-    } else {
-      // Normal case - we have an identifier
-      functionName = (cst.children.IDENTIFIER[0] as IToken).image;
     }
 
     // Process arguments
@@ -958,6 +1256,8 @@ export class IEC61131Visitor {
         $type: 'Call',
         func: undefined, // Will be resolved during semantic analysis, keep as undefined
         args,
+        object: objectName,
+        member: memberName,
       },
     };
   }
@@ -1096,7 +1396,21 @@ export class IEC61131Visitor {
       };
     }
 
-    // Handle parenthesized expressions
+    // Handle parenthesized expressions (LPAREN, expression, RPAREN)
+    if (
+      cst.children?.LPAREN &&
+      cst.children?.expression &&
+      cst.children?.RPAREN
+    ) {
+      return {
+        $type: 'ParenExpression',
+        expr: this.visitExpression(
+          cst.children.expression[0] as IEC61131CstNode
+        ),
+      };
+    }
+
+    // Handle parenthesized expressions via parenExpr rule
     if (cst.children?.parenExpr) {
       return this.visitParenExpr(cst.children.parenExpr[0] as IEC61131CstNode);
     }
@@ -1148,6 +1462,22 @@ export class IEC61131Visitor {
         member: (cst.children.IDENTIFIER[0] as IToken).image,
       });
 
+      // Process array indices and dot-accessed members
+      let identifierIndex = 1;
+
+      // Check if we have expressions (for array indices)
+      if (cst.children.expression) {
+        for (let i = 0; i < cst.children.expression.length; i++) {
+          const indexExpr = this.visitExpression(
+            cst.children.expression[i] as IEC61131CstNode
+          );
+
+          // Last element is the array being indexed
+          const lastElement = elements[elements.length - 1];
+          lastElement.index = indexExpr;
+        }
+      }
+
       // Add additional identifiers as dot-accessed members
       if (cst.children.IDENTIFIER.length > 1) {
         for (let i = 1; i < cst.children.IDENTIFIER.length; i++) {
@@ -1162,6 +1492,77 @@ export class IEC61131Visitor {
     return {
       $type: 'VariableReference',
       elements: elements,
+    };
+  }
+
+  private visitArrayAccess(cst: IEC61131CstNode): Expression {
+    const arrayName = (cst.children.IDENTIFIER[0] as IToken).image;
+    const indexExpr = this.visitExpression(
+      cst.children.expression[0] as IEC61131CstNode
+    );
+
+    return {
+      $type: 'ArrayAccess',
+      array: {
+        $type: 'VariableReference',
+        elements: [
+          {
+            $type: 'ElementAccess',
+            member: arrayName,
+          },
+        ],
+      },
+      index: indexExpr,
+    };
+  }
+
+  private visitArrayInitializer(cst: IEC61131CstNode): Expression {
+    // If we have a simple expression, just return that
+    if (!cst.children?.LBRACKET) {
+      return this.visitExpression(
+        cst.children.expression[0] as IEC61131CstNode
+      );
+    }
+
+    // Otherwise, handle the array initializer
+    const elements: Expression[] = [];
+
+    // Process all expressions as array elements
+    if (cst.children?.expression) {
+      for (const expr of cst.children.expression) {
+        elements.push(this.visitExpression(expr as IEC61131CstNode));
+      }
+    }
+
+    return {
+      $type: 'ArrayInitializer',
+      elements,
+    };
+  }
+
+  // Helper method for inner type declarations inside functions
+  private visitInnerTypeDeclaration(cst: IEC61131CstNode): TypeDeclaration {
+    const name = (cst.children?.IDENTIFIER[0] as IToken).image;
+    let dataType: SimpleType | undefined;
+    let initialValue: Expression | undefined;
+
+    if (cst.children?.dataType?.[0]) {
+      dataType = this.visitDataType(
+        cst.children.dataType[0] as IEC61131CstNode
+      ) as SimpleType;
+    }
+
+    if (cst.children?.expression?.[0]) {
+      initialValue = this.visitExpression(
+        cst.children.expression[0] as IEC61131CstNode
+      );
+    }
+
+    return {
+      $type: 'TypeDeclaration',
+      name,
+      dataType,
+      initialValue,
     };
   }
 }

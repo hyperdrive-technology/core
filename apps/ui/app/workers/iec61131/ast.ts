@@ -24,7 +24,16 @@ export type BinaryOperator =
 
 export type UnaryOperator = 'NOT' | '-';
 
-export type Expression = BinaryExpression | PrimaryExpression | UnaryExpression;
+export type Expression =
+  | UnaryExpression
+  | BinaryExpression
+  | FunctionCallExpression
+  | Literal
+  | ParenExpression
+  | VariableReference
+  | EnumReference
+  | ArrayAccess
+  | ArrayInitializer;
 
 export type PrimaryExpression =
   | FunctionCallExpression
@@ -40,6 +49,7 @@ export type Statement =
   | IfStatement
   | RepeatStatement
   | ReturnStatement
+  | TypeDeclaration
   | WhileStatement;
 
 export type TypeDecl = ArrayType | EnumTypeReference | SimpleType | StructType;
@@ -80,6 +90,8 @@ export interface Call extends AstNode {
   args: Argument[];
   func?: Reference<FunctionDef>;
   variable?: Reference<VariableDecl>;
+  object?: string;
+  member?: string;
 }
 
 export interface CaseStatement extends AstNode {
@@ -144,6 +156,7 @@ export interface FunctionDef extends AstNode {
   name: string;
   returnType: TypeDecl;
   varDeclarations: VarDeclaration[];
+  innerTypes?: TypeDeclaration[];
   body: ProgramBody;
 }
 
@@ -174,6 +187,7 @@ export interface ParenExpression extends AstNode {
 export interface Program extends AstNode {
   readonly $type: 'Program';
   enumTypes: EnumType[];
+  structTypes: StructType[];
   functionBlocks: FunctionBlock[];
   functions: FunctionDef[];
   programs: ProgramDecl[];
@@ -205,11 +219,23 @@ export interface ReturnStatement extends AstNode {
 export interface SimpleType extends AstNode {
   readonly $type: 'SimpleType';
   name: string;
+  rangeConstraint?: {
+    start: Expression;
+    end: Expression;
+  };
+}
+
+export interface StructMember extends AstNode {
+  readonly $type: 'StructMember';
+  name: string;
+  type: TypeDecl;
+  initialValue?: Expression;
 }
 
 export interface StructType extends AstNode {
   readonly $type: 'StructType';
-  fields: VariableDecl[];
+  name: string;
+  members: StructMember[];
 }
 
 export interface UnaryExpression extends AstNode {
@@ -239,4 +265,27 @@ export interface WhileStatement extends AstNode {
   readonly $type: 'WhileStatement';
   condition: Expression;
   statements: Statement[];
+}
+
+export interface EnumReference extends AstNode {
+  readonly $type: 'EnumReference';
+  value: string;
+}
+
+export interface ArrayAccess extends AstNode {
+  readonly $type: 'ArrayAccess';
+  array: VariableReference;
+  index: Expression;
+}
+
+export interface ArrayInitializer extends AstNode {
+  readonly $type: 'ArrayInitializer';
+  elements: Expression[];
+}
+
+export interface TypeDeclaration extends AstNode {
+  readonly $type: 'TypeDeclaration';
+  name: string;
+  dataType?: SimpleType;
+  initialValue?: Expression;
 }
