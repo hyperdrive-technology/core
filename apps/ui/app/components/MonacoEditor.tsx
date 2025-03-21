@@ -121,7 +121,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   const [files, setFiles] = useState<FileNode[]>(initialFiles || []);
   const [openFiles, setOpenFiles] = useState<FileNode[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
-  const [connected] = useState(false);
+  // Remove this unused static connected state
   const [iecFiles, setIecFiles] = useState<IECFile[]>([]);
 
   const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
@@ -191,6 +191,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
   // State for tracking unsaved changes
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [hasChangesSinceCompilation, setHasChangesSinceCompilation] =
+    useState(false);
 
   // Keep a reference to whether we have a prop-provided project name
   const hasProjectNameProp = useRef(!!projectName);
@@ -836,7 +838,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   ]);
 
   // Get WebSocket context at component level
-  const { controllers, connect, disconnect, addController } = useWebSocket();
+  const { controllers, connect, disconnect, addController, isConnected } =
+    useWebSocket();
 
   // Add a special safety effect to protect against DOM node errors
   useEffect(() => {
@@ -1039,7 +1042,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     ]
   );
 
-  // Mark file as having unsaved changes when content changes
+  // When content changes, set unsaved changes to true
   const handleContentChange = useCallback(() => {
     if (activeFileId && editorRef.current) {
       const currentContent = editorRef.current.getValue();
@@ -1047,6 +1050,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
       if (activeFile && currentContent !== activeFile.content) {
         setHasUnsavedChanges(true);
+        setHasChangesSinceCompilation(true);
         setUnsavedFileIds((prev) => {
           const newSet = new Set(prev);
           newSet.add(activeFileId);
@@ -1178,6 +1182,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       // Only reset global unsaved changes if no files are unsaved
       if (unsavedFileIds.size <= 1) {
         setHasUnsavedChanges(false);
+        // We don't reset hasChangesSinceCompilation here because we want to track changes since last compilation
+        // not since last save
       }
 
       // Display a toast to confirm save
@@ -1806,6 +1812,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
     setIsCompiling(true);
     setCompilationResult(null);
+    // Reset the hasChangesSinceCompilation flag when compilation starts
+    setHasChangesSinceCompilation(false);
 
     // Show notification about what's being compiled
     toast.info('Compiling code', {
@@ -1886,15 +1894,84 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
   // Deploy function that compiles first if there are changes
   const handleDeploy = useCallback(async () => {
-    // If we have unsaved changes, or last compilation failed, compile first
-    if (hasUnsavedChanges || !compilationResult?.success) {
+    // Always compile if there are changes since last compilation
+    if (hasChangesSinceCompilation) {
+      toast.info('Compiling before deployment', {
+        description: 'Changes detected since last compilation',
+      });
+
+      // Start compilation
       const compileSuccess = await handleCompile();
       if (!compileSuccess) {
+        toast.error('Deployment canceled', {
+          description:
+            'Cannot deploy because compilation failed. Please fix the errors first.',
+        });
         return; // Don't continue if compilation failed
       }
+
+      // Wait for compilation to complete
+      // Use a promise that resolves when compilerStatus changes
+      await new Promise<void>((resolve, reject) => {
+        const checkCompilerStatus = () => {
+          if (compilerStatus === 'success' && compilerResult?.success) {
+            resolve();
+          } else if (compilerStatus === 'error') {
+            reject(new Error(compilerError || 'Compilation failed'));
+          } else {
+            // Check again after a short delay
+            setTimeout(checkCompilerStatus, 100);
+          }
+        };
+
+        checkCompilerStatus();
+      }).catch((error) => {
+        toast.error('Compilation failed', {
+          description: error.message || 'Check the compile panel for details',
+        });
+        return Promise.reject(error); // Propagate the error to stop deployment
+      });
+    }
+    // If we don't have a successful compilation result yet, compile now
+    else if (!compilationResult?.success) {
+      toast.info('Compiling before deployment', {
+        description: 'No valid compilation found',
+      });
+
+      // Start compilation
+      const compileSuccess = await handleCompile();
+      if (!compileSuccess) {
+        toast.error('Deployment canceled', {
+          description:
+            'Cannot deploy because compilation failed. Please fix the errors first.',
+        });
+        return; // Don't continue if compilation failed
+      }
+
+      // Wait for compilation to complete
+      // Use a promise that resolves when compilerStatus changes
+      await new Promise<void>((resolve, reject) => {
+        const checkCompilerStatus = () => {
+          if (compilerStatus === 'success' && compilerResult?.success) {
+            resolve();
+          } else if (compilerStatus === 'error') {
+            reject(new Error(compilerError || 'Compilation failed'));
+          } else {
+            // Check again after a short delay
+            setTimeout(checkCompilerStatus, 100);
+          }
+        };
+
+        checkCompilerStatus();
+      }).catch((error) => {
+        toast.error('Compilation failed', {
+          description: error.message || 'Check the compile panel for details',
+        });
+        return Promise.reject(error); // Propagate the error to stop deployment
+      });
     }
 
-    // Now deploy the compiled code
+    // Now deploy the compiled code if we have an AST
     if (compilerResult?.ast) {
       setIsDeploying(true);
 
@@ -1933,7 +2010,15 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
         description: 'Please compile your code first before deploying',
       });
     }
-  }, [handleCompile, hasUnsavedChanges, compilationResult, setIsDeploying]);
+  }, [
+    handleCompile,
+    hasChangesSinceCompilation,
+    compilationResult,
+    compilerResult,
+    compilerStatus,
+    compilerError,
+    setIsDeploying,
+  ]);
 
   const handleOpenTrends = (node: FileNode) => {
     // For trends, we'll create a special node with a unique ID
@@ -2140,11 +2225,11 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
         projectName={currentProjectName}
         onDeploy={handleDeploy}
         onCompile={handleCompile}
-        hasUnsavedChanges={hasUnsavedChanges}
+        hasChangesSinceCompilation={hasChangesSinceCompilation}
         isDeploying={isDeploying}
         isCompiling={isCompiling}
         isCompileDisabled={isCompileDisabled()}
-        isDeployDisabled={!connected || isDeploying || isCompileDisabled()}
+        isDeployDisabled={isDeploying || isCompileDisabled()}
       />
       <div className="h-full flex">
         <Resizable

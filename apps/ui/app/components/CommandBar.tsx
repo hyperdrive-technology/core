@@ -6,7 +6,7 @@ export interface CommandBarProps {
   projectName: string;
   onDeploy: () => void;
   onCompile: () => void;
-  hasUnsavedChanges: boolean;
+  hasChangesSinceCompilation: boolean;
   isDeploying?: boolean;
   isCompiling?: boolean;
   isCompileDisabled?: boolean;
@@ -17,7 +17,7 @@ export const CommandBar = ({
   projectName,
   onDeploy,
   onCompile,
-  hasUnsavedChanges,
+  hasChangesSinceCompilation,
   isDeploying,
   isCompiling,
   isCompileDisabled,
@@ -42,10 +42,10 @@ export const CommandBar = ({
       {/* Center - Project name */}
       <div className="font-semibold text-center flex items-center justify-center">
         {projectName}
-        {hasUnsavedChanges && (
+        {hasChangesSinceCompilation && (
           <span
             className="ml-2 size-2 rounded-full bg-gray-900 dark:bg-gray-100"
-            title="Unsaved Changes (Ctrl+S to save)"
+            title="Changes since last compilation (Ctrl+Shift+C to compile)"
           />
         )}
       </div>
@@ -71,7 +71,7 @@ export const CommandBar = ({
           variant="outline"
           size="sm"
           onClick={onDeploy}
-          disabled={isDeployDisabled || !isConnected || isDeploying}
+          disabled={isDeployDisabled || isDeploying}
           title={
             isDeployDisabled
               ? 'Only IEC-61131 (.st) files can be deployed'
