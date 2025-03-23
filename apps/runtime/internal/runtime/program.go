@@ -16,6 +16,7 @@ type Program struct {
 	Modified time.Time
 	ast      *ast.Program
 	vars     map[string]*Variable
+	code     []interface{} // Raw statements from AST JSON
 }
 
 // NewProgram creates a new program from source code
@@ -62,11 +63,25 @@ func NewProgram(name, code string) (*Program, error) {
 
 // Execute runs one cycle of the program
 func (p *Program) Execute() error {
-	for _, stmt := range p.ast.Body {
-		if err := p.executeStatement(stmt); err != nil {
-			return err
+	// If we have a traditional AST, execute it
+	if p.ast != nil && len(p.ast.Body) > 0 {
+		for _, stmt := range p.ast.Body {
+			if err := p.executeStatement(stmt); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Otherwise, if we have raw statements from JSON, execute those
+	if len(p.code) > 0 {
+		for _, stmt := range p.code {
+			if err := p.executeRawStatement(stmt); err != nil {
+				return err
+			}
 		}
 	}
+
 	return nil
 }
 
@@ -88,6 +103,126 @@ func (p *Program) executeStatement(stmt ast.Statement) error {
 	default:
 		return fmt.Errorf("unsupported statement type: %T", stmt)
 	}
+}
+
+// executeRawStatement executes a statement from raw JSON AST
+func (p *Program) executeRawStatement(stmt interface{}) error {
+	stmtMap, ok := stmt.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid statement format: not a map")
+	}
+
+	stmtType, ok := stmtMap["$type"].(string)
+	if !ok {
+		return fmt.Errorf("invalid statement format: missing $type")
+	}
+
+	switch stmtType {
+	case "AssignmentStatement":
+		return p.executeRawAssignment(stmtMap)
+	case "IfStatement":
+		return p.executeRawIfStatement(stmtMap)
+	default:
+		// Log unsupported statement type but don't fail
+		fmt.Printf("Unsupported statement type: %s\n", stmtType)
+		return nil
+	}
+}
+
+// executeRawAssignment executes an assignment statement from raw JSON AST
+func (p *Program) executeRawAssignment(stmt map[string]interface{}) error {
+	// Get variable name
+	varRef, ok := stmt["variable"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid assignment: missing variable reference")
+	}
+
+	varName, ok := varRef["name"].(string)
+	if !ok {
+		return fmt.Errorf("invalid assignment: missing variable name")
+	}
+
+	// Find the variable in our program
+	variable, ok := p.vars[varName]
+	if !ok {
+		return fmt.Errorf("undefined variable: %s", varName)
+	}
+
+	// Get the expression to evaluate
+	expr, ok := stmt["expression"]
+	if !ok {
+		return fmt.Errorf("invalid assignment: missing expression")
+	}
+
+	// Evaluate the expression
+	value, err := p.evaluateRawExpression(expr)
+	if err != nil {
+		return err
+	}
+
+	// Assign the value to the variable
+	variable.Value = value
+	variable.Timestamp = time.Now()
+
+	return nil
+}
+
+// executeRawIfStatement executes an if statement from raw JSON AST
+func (p *Program) executeRawIfStatement(stmt map[string]interface{}) error {
+	// Get condition
+	condition, ok := stmt["condition"]
+	if !ok {
+		return fmt.Errorf("invalid if statement: missing condition")
+	}
+
+	// Evaluate condition
+	condValue, err := p.evaluateRawExpression(condition)
+	if err != nil {
+		return err
+	}
+
+	// Check if condition is true
+	condBool, ok := condValue.(bool)
+	if !ok {
+		return fmt.Errorf("invalid condition result: not a boolean")
+	}
+
+	// Execute then or else branch
+	if condBool {
+		// Execute then branch
+		thenBlock, ok := stmt["then"].([]interface{})
+		if !ok {
+			// It might be a single statement
+			if thenStmt, ok := stmt["then"].(map[string]interface{}); ok {
+				return p.executeRawStatement(thenStmt)
+			}
+			return fmt.Errorf("invalid then branch")
+		}
+
+		for _, thenStmt := range thenBlock {
+			if err := p.executeRawStatement(thenStmt); err != nil {
+				return err
+			}
+		}
+	} else if elseExpr, hasElse := stmt["else"]; hasElse {
+		// Execute else branch if exists
+		elseBlock, ok := elseExpr.([]interface{})
+		if !ok {
+			// It might be a single statement
+			if elseStmt, ok := elseExpr.(map[string]interface{}); ok {
+				return p.executeRawStatement(elseStmt)
+			}
+			return fmt.Errorf("invalid else branch")
+		}
+
+		for _, elseStmt := range elseBlock {
+			if err := p.executeRawStatement(elseStmt); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // evaluateExpression evaluates an expression
@@ -113,6 +248,61 @@ func (p *Program) evaluateExpression(expr ast.Expression) (interface{}, error) {
 		return evaluateBinaryOp(left, e.Operator, right)
 	default:
 		return nil, fmt.Errorf("unsupported expression type: %T", expr)
+	}
+}
+
+// evaluateRawExpression evaluates an expression from raw JSON AST
+func (p *Program) evaluateRawExpression(expr interface{}) (interface{}, error) {
+	exprMap, ok := expr.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid expression format: not a map")
+	}
+
+	exprType, ok := exprMap["$type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid expression format: missing $type")
+	}
+
+	switch exprType {
+	case "IntLiteral", "BooleanLiteral", "RealLiteral", "StringLiteral":
+		// Return the value of the literal
+		return exprMap["value"], nil
+
+	case "VariableReference":
+		// Get variable value
+		varName, ok := exprMap["name"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid variable reference: missing name")
+		}
+
+		variable, ok := p.vars[varName]
+		if !ok {
+			return nil, fmt.Errorf("undefined variable: %s", varName)
+		}
+
+		return variable.Value, nil
+
+	case "BinaryExpression":
+		// Evaluate binary expression
+		left, err := p.evaluateRawExpression(exprMap["left"])
+		if err != nil {
+			return nil, err
+		}
+
+		right, err := p.evaluateRawExpression(exprMap["right"])
+		if err != nil {
+			return nil, err
+		}
+
+		operator, ok := exprMap["operator"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid binary expression: missing operator")
+		}
+
+		return evaluateBinaryOp(left, operator, right)
+
+	default:
+		return nil, fmt.Errorf("unsupported expression type: %s", exprType)
 	}
 }
 

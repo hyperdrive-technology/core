@@ -33,6 +33,7 @@ interface CompilationResult {
   }>;
   fileCount: number;
   ast?: Program;
+  sourceCode?: string;
   error?: string;
   processingTime?: number;
 }
@@ -130,6 +131,7 @@ self.onmessage = (event) => {
         // Store the AST if available and we don't have one yet
         if (validationResult.success && validationResult.ast && !result.ast) {
           result.ast = validationResult.ast;
+          result.sourceCode = file.content;
           console.log(
             `IEC61131 Compiler Worker: AST generated successfully for ${file.fileName}`
           );

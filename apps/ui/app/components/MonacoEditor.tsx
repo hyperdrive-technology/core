@@ -15,6 +15,7 @@ import React, {
 import { toast } from 'sonner';
 import { useIECCompiler } from '../hooks/useIECCompiler';
 import { useMonacoLanguageClient } from '../hooks/useMonacoLanguageClient';
+import { CONTROLLER_API } from '../utils/constants';
 import { IECFile } from '../utils/iec-file-loader';
 import {
   IEC61131_LANGUAGE_ID,
@@ -848,14 +849,30 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     if (editorReady && editorRef.current) {
       console.log('Running DOM safety effect for Monaco Editor');
 
+      // Track retry count to prevent infinite loops
+      let retryCount = 0;
+      const MAX_RETRIES = 5;
+
       // Function to verify DOM nodes are properly set up
       const verifyEditorDom = () => {
         try {
           const domNode = editorRef.current?.getDomNode();
           if (!domNode) {
-            console.log('Editor DOM node still not available, will retry');
-            // Retry after a delay
-            setTimeout(verifyEditorDom, 100);
+            // Only log on first and last attempts to reduce spam
+            if (retryCount === 0 || retryCount === MAX_RETRIES - 1) {
+              console.log(
+                `Editor DOM node not available (attempt ${
+                  retryCount + 1
+                }/${MAX_RETRIES})`
+              );
+            }
+
+            // Increase the delay with each retry and limit total attempts
+            if (retryCount < MAX_RETRIES) {
+              retryCount++;
+              // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms
+              setTimeout(verifyEditorDom, 100 * Math.pow(2, retryCount - 1));
+            }
             return false;
           }
           return true;
@@ -1186,8 +1203,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
         // not since last save
       }
 
-      // Display a toast to confirm save
-      toast.success(`File saved: ${activeFile?.name}`);
+      // Remove toast notification - just log to console instead
+      console.log(`File saved: ${activeFile?.name}`);
     }
   }, [
     activeFileId,
@@ -1745,37 +1762,18 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       return [];
     }
 
-    console.log('Found Logic section:', logicSection);
-
-    // Debug: Dump the full Logic section to inspect its structure
-    console.log(
-      'Logic section structure:',
-      JSON.stringify(logicSection, null, 2)
-    );
-
-    if (logicSection.children) {
-      console.log(
-        `Logic has ${logicSection.children.length} children:`,
-        logicSection.children
-      );
-    }
+    // Logic section debug logs removed
 
     const stFiles: FileNode[] = [];
 
     // Recursive function to traverse the file tree
     const collectSTFiles = (node: FileNode) => {
-      // Log every node we're checking
-      console.log(`Checking for ST: ${node.name}, isFolder: ${node.isFolder}`);
-
+      // Debugging logs removed
       if (!node.isFolder && node.name.toLowerCase().endsWith('.st')) {
-        console.log(`Found ST file: ${node.name}`);
         stFiles.push(node);
       }
 
       if (node.children && node.children.length > 0) {
-        console.log(
-          `Traversing ${node.children.length} children of ${node.name}`
-        );
         node.children.forEach(collectSTFiles);
       }
     };
@@ -1815,10 +1813,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     // Reset the hasChangesSinceCompilation flag when compilation starts
     setHasChangesSinceCompilation(false);
 
-    // Show notification about what's being compiled
-    toast.info('Compiling code', {
-      description: `Compiling ${stFiles.length} IEC-61131 file(s) in the browser`,
-    });
+    // Removed toast.info notification for compiling
 
     try {
       // Convert FileNodes to IECFiles for the compiler
@@ -1846,7 +1841,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       setIsCompiling(false);
       return false;
     }
-  }, [findAllSTFiles, toast, safeCompile]);
+  }, [findAllSTFiles, safeCompile]);
 
   // Update iecFiles when files change
   useEffect(() => {
@@ -1894,6 +1889,20 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
   // Deploy function that compiles first if there are changes
   const handleDeploy = useCallback(async () => {
+    console.log('Deploying code');
+
+    // Ensure we have an active file
+    if (!activeFile || !activeFile.content) {
+      toast.error('No active file to deploy');
+      return;
+    }
+
+    // Check if we already have a valid compilation and the code hasn't changed since then
+    if (compilationResult?.success && !hasChangesSinceCompilation) {
+      console.log('Using existing compilation', compilationResult);
+      // No need to compile again, continue with deployment
+    }
+
     // Always compile if there are changes since last compilation
     if (hasChangesSinceCompilation) {
       toast.info('Compiling before deployment', {
@@ -1934,9 +1943,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     }
     // If we don't have a successful compilation result yet, compile now
     else if (!compilationResult?.success) {
-      toast.info('Compiling before deployment', {
-        description: 'No valid compilation found',
-      });
+      // Removed toast.info for compiling before deployment
 
       // Start compilation
       const compileSuccess = await handleCompile();
@@ -1977,12 +1984,16 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
       try {
         // Deploy the AST to the controller
-        const response = await fetch('http://localhost:3000/api/deploy', {
+        const response = await fetch(CONTROLLER_API.DEPLOY, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ ast: compilerResult.ast }),
+          body: JSON.stringify({
+            ast: compilerResult.ast,
+            sourceCode: compilerResult.sourceCode || '',
+            filePath: activeFile?.path || 'unknown.st',
+          }),
         });
 
         if (!response.ok) {
@@ -2018,6 +2029,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     compilerStatus,
     compilerError,
     setIsDeploying,
+    activeFile,
   ]);
 
   const handleOpenTrends = (node: FileNode) => {

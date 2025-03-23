@@ -5,12 +5,11 @@ import {
   File,
   FilePlus,
   Folder,
-  FolderOpen,
   FolderPlus,
   Layout,
   Server,
 } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useWebSocket } from '../context/WebSocketContext';
 import ContextMenu from '../ContextMenu';
 import { FileNode } from '../types';
@@ -196,6 +195,9 @@ export function TreeNode({
   onContextMenu,
   getControllerStatus,
 }: TreeNodeProps) {
+  const { controllers, isControllerConnecting } = useWebSocket();
+  const menuRef = useRef<HTMLDivElement>(null);
+
   const [isOpen, setIsOpen] = useState(
     node.nodeType === 'heading' ? true : false
   );
@@ -242,57 +244,71 @@ export function TreeNode({
 
   // Check if this node is a controller and if it's connected
   const isController = node.nodeType === 'controller';
-  const isConnected =
+  const nodeIsConnected =
     isController && node.id ? getControllerStatus(node.id) : false;
 
-  return (
-    <div>
+  const renderStatusIndicator = () => {
+    if (node.nodeType !== 'controller') return null;
+
+    const isConnected = controllers.some(
+      (controller) => controller.id === node.id && controller.isConnected
+    );
+
+    const isConnecting = isControllerConnecting(node.id);
+
+    if (isConnecting) {
+      return (
+        <div
+          className="size-2 rounded-full bg-yellow-400 absolute right-2"
+          title="Connecting..."
+        />
+      );
+    }
+
+    if (isConnected) {
+      return (
+        <div
+          className="size-2 rounded-full bg-green-500 absolute right-2"
+          title="Connected"
+        />
+      );
+    }
+
+    return (
       <div
-        className={`flex items-center p-1 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 ${
-          selectedFileId === node.id ? 'bg-gray-200 dark:bg-gray-700' : ''
-        } ${
-          node.nodeType === 'heading'
-            ? 'font-bold text-sm border-b border-gray-300 dark:border-gray-600'
-            : ''
-        }`}
-        style={{
-          paddingLeft:
-            node.nodeType === 'heading' ? '4px' : `${level * 12 + 4}px`,
-        }}
+        className="size-2 rounded-full bg-red-500 absolute right-2"
+        title="Disconnected"
+      />
+    );
+  };
+
+  return (
+    <div ref={menuRef}>
+      <div
+        className={`flex items-center px-2 h-7 text-sm relative ${
+          selectedFileId === node.id ? 'bg-blue-500/20' : ''
+        } cursor-pointer group`}
         onClick={handleSelect}
         onContextMenu={handleContextMenu}
-        data-node-type={node.nodeType || (node.isFolder ? 'folder' : 'file')}
-        data-node-id={node.id}
       >
         {node.isFolder && node.nodeType !== 'heading' && (
-          <span className="flex items-center">
-            <span className="mr-1 cursor-pointer" onClick={handleToggle}>
-              {isOpen ? (
-                <ChevronDown className="h-4 w-4" />
+          <div className="mr-1 flex items-center justify-center w-4">
+            {node.children && node.children.length > 0 ? (
+              isOpen ? (
+                <ChevronDown size={14} />
               ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </span>
-            <span className="mr-1">
-              {isOpen ? (
-                <FolderOpen className="h-4 w-4 text-yellow-500" />
-              ) : (
-                <Folder className="h-4 w-4 text-yellow-500" />
-              )}
-            </span>
-          </span>
+                <ChevronRight size={14} />
+              )
+            ) : null}
+          </div>
         )}
         {node.nodeType === 'heading' && (
-          <span className="flex items-center">
+          <div className="mr-3 flex items-center justify-center w-4">
             <span className="mr-1 cursor-pointer" onClick={handleToggle}>
-              {isOpen ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
+              {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </span>
             <span className="mr-1">{getHeadingIcon()}</span>
-          </span>
+          </div>
         )}
         {node.nodeType === 'controller' && (
           <span className="ml-5 mr-1">
@@ -305,21 +321,7 @@ export function TreeNode({
           </span>
         )}
         <span className="truncate">{node.name}</span>
-        {node.nodeType === 'controller' && node.metadata && (
-          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-            ({node.metadata.ip}, v{node.metadata.version})
-          </span>
-        )}
-
-        {/* Add connection indicator for controllers */}
-        {isController && (
-          <div
-            className={`ml-2 size-2 flex-shrink-0 rounded-full ${
-              isConnected ? 'bg-green-500' : 'bg-red-500'
-            }`}
-            title={isConnected ? 'Connected' : 'Disconnected'}
-          />
-        )}
+        {renderStatusIndicator()}
       </div>
       {node.isFolder && isOpen && node.children && (
         <div>

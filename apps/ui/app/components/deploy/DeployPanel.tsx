@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Code, Loader2, Upload } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { CONTROLLER_API } from '../../utils/constants';
 import { useWebSocket } from '../context/WebSocketContext';
 
 interface DeployPanelProps {
@@ -116,7 +117,7 @@ export const DeployPanel: React.FC<DeployPanelProps> = ({ projectPath }) => {
       setIsDeploying(true);
       setDeployError(null);
 
-      const response = await fetch('http://localhost:3000/api/deploy', {
+      const response = await fetch(CONTROLLER_API.DEPLOY, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

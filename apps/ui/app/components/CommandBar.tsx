@@ -1,40 +1,108 @@
-import { Button } from '@/components/ui/button';
 import { Code, Plug, Power, Upload } from 'lucide-react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useWebSocket } from './context/WebSocketContext';
+import { Button } from './ui/button';
 
 export interface CommandBarProps {
   projectName: string;
-  onDeploy: () => void;
-  onCompile: () => void;
-  hasChangesSinceCompilation: boolean;
-  isDeploying?: boolean;
+  onCompile?: () => void;
+  onDeploy?: () => void;
+  hasChangesSinceCompilation?: boolean;
+  actions?: {
+    onCompile?: () => void;
+    onDeploy?: () => void;
+  };
+  hasChanges?: boolean;
   isCompiling?: boolean;
+  isDeploying?: boolean;
   isCompileDisabled?: boolean;
   isDeployDisabled?: boolean;
+  lastCompiledAt?: string;
 }
 
-export const CommandBar = ({
+export const CommandBar: React.FC<CommandBarProps> = ({
   projectName,
-  onDeploy,
   onCompile,
+  onDeploy,
   hasChangesSinceCompilation,
-  isDeploying,
+  actions,
+  hasChanges = hasChangesSinceCompilation,
   isCompiling,
+  isDeploying,
   isCompileDisabled,
   isDeployDisabled,
-}: CommandBarProps) => {
-  const { isConnected, connect, disconnect, controllers } = useWebSocket();
+  lastCompiledAt,
+}) => {
+  const {
+    isConnected,
+    controllers,
+    connect: connectAll,
+    disconnect: disconnectAll,
+    isControllerConnecting,
+    connectingControllers,
+  } = useWebSocket();
 
-  const handleToggleConnection = () => {
+  // Add debugging
+  useEffect(() => {
+    // Removed debug console logs to reduce console spam
+  }, [controllers, connectingControllers, isConnected, isControllerConnecting]);
+
+  const anyControllerConnecting = useCallback(() => {
+    const result = controllers.some((controller) =>
+      isControllerConnecting(controller.id)
+    );
+    return result;
+  }, [controllers, isControllerConnecting]);
+
+  // Connection toggle handler
+  const handleConnectionToggle = () => {
     if (isConnected) {
-      disconnect(); // Disconnect from all controllers
+      disconnectAll();
     } else {
-      connect(); // Connect to all controllers
+      connectAll();
     }
   };
 
+  // Determine button text based on connection status
+  const connectionBtnText = useMemo(() => {
+    // Check if any controllers are in connecting state
+    const anyConnecting = controllers.some((controller) =>
+      connectingControllers.has(controller.id)
+    );
+
+    if (anyConnecting) {
+      return 'Connecting...';
+    }
+    return isConnected ? 'Disconnect' : 'Connect';
+  }, [isConnected, controllers, connectingControllers]);
+
+  // Determine if the button should be disabled
+  const isConnectionBtnDisabled = useMemo(() => {
+    return controllers.some((controller) =>
+      connectingControllers.has(controller.id)
+    );
+  }, [controllers, connectingControllers]);
+
   const connectedCount = controllers.filter((c) => c.isConnected).length;
   const totalControllers = controllers.length;
+
+  // Handle compile click with fallback
+  const handleCompileClick = () => {
+    if (actions?.onCompile) {
+      actions.onCompile();
+    } else if (onCompile) {
+      onCompile();
+    }
+  };
+
+  // Handle deploy click with fallback
+  const handleDeployClick = () => {
+    if (actions?.onDeploy) {
+      actions.onDeploy();
+    } else if (onDeploy) {
+      onDeploy();
+    }
+  };
 
   return (
     <div className="flex items-center justify-between p-2 border-b dark:border-gray-700  dark:bg-gray-900">
@@ -42,11 +110,16 @@ export const CommandBar = ({
       {/* Center - Project name */}
       <div className="font-semibold text-center flex items-center justify-center">
         {projectName}
-        {hasChangesSinceCompilation && (
+        {(hasChanges || hasChangesSinceCompilation) && (
           <span
             className="ml-2 size-2 rounded-full bg-gray-900 dark:bg-gray-100"
             title="Changes since last compilation (Ctrl+Shift+C to compile)"
           />
+        )}
+        {lastCompiledAt && (
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+            Last compile: {lastCompiledAt}
+          </span>
         )}
       </div>
 
@@ -55,7 +128,7 @@ export const CommandBar = ({
         <Button
           variant="outline"
           size="sm"
-          onClick={onCompile}
+          onClick={handleCompileClick}
           disabled={isCompiling || isCompileDisabled}
           title={
             isCompileDisabled
@@ -70,7 +143,7 @@ export const CommandBar = ({
         <Button
           variant="outline"
           size="sm"
-          onClick={onDeploy}
+          onClick={handleDeployClick}
           disabled={isDeployDisabled || isDeploying}
           title={
             isDeployDisabled
@@ -85,7 +158,8 @@ export const CommandBar = ({
         <Button
           variant={isConnected ? 'default' : 'outline'}
           size="sm"
-          onClick={handleToggleConnection}
+          onClick={handleConnectionToggle}
+          disabled={isConnectionBtnDisabled}
           title={
             isConnected
               ? 'Disconnect from All Controllers'
@@ -98,7 +172,7 @@ export const CommandBar = ({
           {isConnected ? (
             <>
               <Power className="h-4 w-4 mr-1" />
-              Disconnect
+              {connectionBtnText}
               {totalControllers > 0 && (
                 <span className="ml-1 text-xs">
                   ({connectedCount}/{totalControllers})
@@ -108,7 +182,7 @@ export const CommandBar = ({
           ) : (
             <>
               <Plug className="h-4 w-4 mr-1" />
-              Connect
+              {connectionBtnText}
               {totalControllers > 0 && (
                 <span className="ml-1 text-xs">({totalControllers})</span>
               )}

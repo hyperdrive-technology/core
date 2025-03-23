@@ -16,6 +16,7 @@ export interface CompilationResult {
   }>;
   fileCount: number;
   ast?: any; // Store the AST for later deployment
+  sourceCode?: string; // Original source code for the AST
 }
 
 type CompilerStatus = 'idle' | 'loading' | 'compiling' | 'success' | 'error';
