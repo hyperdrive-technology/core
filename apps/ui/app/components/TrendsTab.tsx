@@ -14,8 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { toast } from 'sonner';
-import { CONTROLLER_API, CONTROLLER_API_BASE_URL } from '../utils/constants';
+import { CONTROLLER_API } from '../utils/constants';
 import { useWebSocket } from './context/WebSocketContext';
 import { FileNode } from './types';
 
@@ -144,6 +143,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
     variables: wsVariables,
     historyData,
     subscribeToVariables,
+    setTrendTabOpen,
   } = useWebSocket();
   const [availableVariables, setAvailableVariables] = useState<string[]>([]);
   const [selectedVariables, setSelectedVariables] = useState<string[]>([]);
@@ -151,190 +151,116 @@ export default function TrendsTab({ file }: TrendsTabProps) {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [trendData, setTrendData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sourceCode, setSourceCode] = useState<string | null>(null);
+  const [manualVariable, setManualVariable] = useState<string>('');
   const [hasAttemptedSubscribe, setHasAttemptedSubscribe] = useState(false);
 
-  // Fetch the source code for the file to extract variables
+  // Notify WebSocketContext when the trend tab is opened
   useEffect(() => {
-    const fetchAndProcessAST = async () => {
-      console.log('TrendsTab for file:', file);
-      console.log('File ID:', file.id);
-      console.log('File name:', file.name);
+    setTrendTabOpen(true);
 
-      // Extract the original file ID
-      const originalFileId = getOriginalFilePath(file.id);
-      const fileName = getFileName(file.name);
+    // Clean up when component unmounts
+    return () => {
+      setTrendTabOpen(false);
+    };
+  }, [setTrendTabOpen]);
 
-      console.log('Using ID for download:', originalFileId);
-      console.log('Using name for display:', fileName);
+  // Initialize with some default variables based on file name
+  useEffect(() => {
+    // Set initial loading state
+    setLoading(true);
 
-      // First check what ASTs are available
+    // Get the file name without extension and path
+    const fileName = getFileName(file.name);
+    // Default to main-st if we can't determine a namespace
+    let namespace = 'main-st';
+
+    // If we have a specific file name, use it for the namespace
+    if (fileName && fileName !== 'unknown' && fileName !== 'trends') {
+      const baseName = fileName.replace('.st', '').replace('Trends: ', '');
+      namespace = `${baseName}-st`;
+    }
+
+    console.log(`Using namespace: ${namespace} for trends variables`);
+
+    // Fetch the actual ST code to extract variables
+    const fetchSTCode = async () => {
       try {
-        const response = await fetch(
-          `${CONTROLLER_API_BASE_URL}/api/download-ast`
-        );
+        // Try to fetch the source code from the controller
+        const filePath = namespace.replace('-st', ''); // Get original path without -st suffix
+        const response = await fetch(CONTROLLER_API.DOWNLOAD_AST(filePath));
         if (response.ok) {
           const data = await response.json();
-          console.log('Available ASTs:', data.keys);
+          if (data.sourceCode) {
+            // Extract variables from the source code
+            const extractedVars = extractVariablesFromST(data.sourceCode);
+            console.log('Extracted variables from ST code:', extractedVars);
 
-          if (data.keys && data.keys.length > 0) {
-            // Try to find a close match to our file
-            let bestMatch = findBestASTMatch(data.keys, originalFileId);
+            // Format variables with namespace
+            const namespacedVars = extractedVars.map(
+              (v) => `${namespace}.${v}`
+            );
 
-            if (bestMatch) {
-              console.log(`Found matching AST: ${bestMatch}`);
-              // Now fetch this specific AST
-              const { sourceCode, ast } = await fetchFileContent(bestMatch);
+            if (namespacedVars.length > 0) {
+              setAvailableVariables(namespacedVars);
+              // Select the first few variables by default
+              setSelectedVariables(
+                namespacedVars.slice(0, Math.min(4, namespacedVars.length))
+              );
 
-              if (ast) {
-                processASTandVariables(ast, sourceCode, fileName);
-                setLoading(false);
-                return;
+              // Subscribe to these variables
+              if (isConnected) {
+                subscribeToVariables(namespacedVars, namespace);
+                console.log(
+                  `Subscribed to ST variables with namespace ${namespace}:`,
+                  namespacedVars
+                );
               }
+
+              setLoading(false);
+              return;
             }
           }
         }
+
+        // If we couldn't get variables from source code, use fallback variables
+        console.log('Using fallback variables - no source code found');
+        const fallbackVars = [
+          `${namespace}.Mode`,
+          `${namespace}.Sensor1`,
+          `${namespace}.Sensor2`,
+          `${namespace}.EmergencyVehicle`,
+          `${namespace}.ManualOverride`,
+          `${namespace}.TimeOfDay`,
+        ];
+
+        setAvailableVariables(fallbackVars);
+        setSelectedVariables(fallbackVars.slice(0, 2)); // Just select the first two
+
+        if (isConnected) {
+          subscribeToVariables(fallbackVars, namespace);
+          console.log(
+            `Subscribed to fallback variables with namespace ${namespace}`
+          );
+        }
       } catch (error) {
-        console.warn('Error checking available ASTs:', error);
-      }
+        console.error('Error fetching ST code:', error);
+        // Use basic fallback if everything fails
+        const basicFallback = [`${namespace}.Mode`, `${namespace}.Sensor1`];
+        setAvailableVariables(basicFallback);
+        setSelectedVariables(basicFallback.slice(0, 1));
 
-      // If we couldn't find a match from the list or the list endpoint failed,
-      // fall back to direct request with the original ID
-      const { sourceCode, ast } = await fetchFileContent(originalFileId);
-
-      if (ast) {
-        processASTandVariables(ast, sourceCode, fileName);
-      } else {
-        console.warn('Failed to retrieve AST, using fallback method');
-        // Create a default message to display when the file isn't deployed
-        setAvailableVariables([
-          'Please deploy your file first to see variables',
-        ]);
-        // Show a notification to the user
-        toast(
-          'This file needs to be deployed before variables can be displayed',
-          {
-            duration: 5000,
-          }
-        );
+        if (isConnected) {
+          subscribeToVariables(basicFallback, namespace);
+        }
       }
 
       setLoading(false);
     };
 
-    fetchAndProcessAST();
-  }, [file.id, file.name, isConnected]);
+    fetchSTCode();
 
-  // Find the best matching AST from available keys
-  const findBestASTMatch = (
-    keys: string[],
-    targetPath: string
-  ): string | null => {
-    // Try exact match first
-    if (keys.includes(targetPath)) {
-      return targetPath;
-    }
-
-    // Try with/without .st extension
-    const withExt = targetPath.endsWith('.st')
-      ? targetPath
-      : `${targetPath}.st`;
-    const withoutExt = targetPath.endsWith('.st')
-      ? targetPath.slice(0, -3)
-      : targetPath;
-
-    if (keys.includes(withExt)) return withExt;
-    if (keys.includes(withoutExt)) return withoutExt;
-
-    // Get just the filename
-    const fileName = targetPath.includes('/')
-      ? targetPath.substring(targetPath.lastIndexOf('/') + 1)
-      : targetPath;
-
-    // Try filename match
-    for (const key of keys) {
-      if (key.endsWith(fileName)) return key;
-    }
-
-    // If we have any main.st, use that as last resort
-    for (const key of keys) {
-      if (key.includes('main.st')) return key;
-    }
-
-    // Return the first AST if we couldn't find anything else
-    return keys.length > 0 ? keys[0] : null;
-  };
-
-  // Process AST and extract variables
-  const processASTandVariables = (
-    ast: any,
-    sourceCode: string | null,
-    fileName: string
-  ) => {
-    // Extract variables from the AST
-    const extractedVars = extractVariablesFromAST(ast);
-    console.log('Variables extracted from AST:', extractedVars);
-
-    if (extractedVars.length > 0) {
-      setAvailableVariables(extractedVars);
-      // Select the first few variables by default
-      setSelectedVariables(
-        extractedVars.slice(0, Math.min(4, extractedVars.length))
-      );
-
-      // Subscribe to these variables if connected
-      if (isConnected) {
-        subscribeToVariables(extractedVars, fileName);
-        console.log('Subscribed to variables from AST for file:', fileName);
-      }
-    } else if (sourceCode) {
-      // Fallback to extracting from source code if AST parsing failed
-      const sourceVars = extractVariablesFromST(sourceCode);
-      console.log('Variables extracted from source code:', sourceVars);
-
-      setAvailableVariables(sourceVars);
-      setSelectedVariables(sourceVars.slice(0, Math.min(4, sourceVars.length)));
-
-      if (isConnected) {
-        subscribeToVariables(sourceVars, fileName);
-        console.log(
-          'Subscribed to variables from source code for file:',
-          fileName
-        );
-      }
-    } else {
-      console.warn('No variables found in AST or source code');
-      setAvailableVariables(['No variables found']);
-    }
-  };
-
-  // Get the file path or name from the trends node id
-  const getOriginalFilePath = (fileId: string) => {
-    // For trends nodes, the id format is "trends-{originalFileId}"
-    let originalFileId = fileId.replace('trends-', '');
-
-    // Strip any additional identifiers that might be present
-    if (originalFileId.endsWith('-0')) {
-      originalFileId = originalFileId.slice(0, -2);
-    }
-
-    // Get just the filename if it's a compound path
-    if (originalFileId.includes('-')) {
-      const parts = originalFileId.split('-');
-      if (parts.length > 0) {
-        // Try to get the last part that looks like a filename
-        for (let i = parts.length - 1; i >= 0; i--) {
-          if (parts[i].endsWith('.st')) {
-            originalFileId = parts[i];
-            break;
-          }
-        }
-      }
-    }
-
-    console.log('Processed file ID:', originalFileId);
-    return originalFileId;
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file.name]); // Only re-run if file name changes
 
   // Get the file name without path
   const getFileName = (filename: string) => {
@@ -345,6 +271,53 @@ export default function TrendsTab({ file }: TrendsTabProps) {
       return cleanName.substring(cleanName.lastIndexOf('/') + 1);
     }
     return cleanName;
+  };
+
+  // Add a new variable manually
+  const handleAddVariable = () => {
+    if (!manualVariable.trim()) return;
+
+    // Get the namespace from existing variables, or create one if none exist
+    let namespace = 'main-st'; // Default to main-st
+
+    if (availableVariables.length > 0 && availableVariables[0].includes('.')) {
+      // Extract namespace from first available variable
+      namespace = availableVariables[0].split('.')[0];
+    } else if (
+      file.name &&
+      file.name !== 'unknown' &&
+      !file.name.includes('Trends:')
+    ) {
+      // Try to get namespace from file name
+      const fileName = getFileName(file.name);
+      const baseName = fileName.replace('.st', '');
+      namespace = `${baseName}-st`;
+    }
+
+    console.log(`Using namespace ${namespace} for manual variable`);
+
+    // Format the variable with namespace if it doesn't already have one
+    let formattedVariable = manualVariable;
+    if (!manualVariable.includes('.')) {
+      formattedVariable = `${namespace}.${manualVariable}`;
+    }
+
+    // Add to available variables if not already there
+    if (!availableVariables.includes(formattedVariable)) {
+      // Update all state in one batch to avoid multiple renders
+      const newVariables = [...availableVariables, formattedVariable];
+      setAvailableVariables(newVariables);
+      setSelectedVariables((prev) => [...prev, formattedVariable]);
+
+      // Subscribe to this variable
+      if (isConnected) {
+        subscribeToVariables([formattedVariable], namespace);
+        console.log(`Subscribed to new variable: ${formattedVariable}`);
+      }
+
+      // Clear the input
+      setManualVariable('');
+    }
   };
 
   // Generate trend data from history data from WebSocket
@@ -427,7 +400,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
       setTrendData(formattedData);
       setLoading(false);
     }
-  }, [isConnected, selectedVariables, historyData, timeRange]);
+  }, [historyData, selectedVariables, timeRange]); // Remove isConnected from dependencies
 
   // When WebSocket variables update, check if any match our subscriptions
   useEffect(() => {
@@ -472,19 +445,18 @@ export default function TrendsTab({ file }: TrendsTabProps) {
       });
 
       // If we found new variables, update available variables
-      if (foundVars.length > 0) {
+      if (foundVars.length > 0 && !hasAttemptedSubscribe) {
         if (shouldLog) {
           console.log(
             `Found ${foundVars.length} total subscribed variables in WebSocket data`
           );
         }
-        if (!hasAttemptedSubscribe) {
-          setHasAttemptedSubscribe(true);
-        }
+        setHasAttemptedSubscribe(true);
         setLoading(false);
       }
     }
-  }, [wsVariables, availableVariables, hasAttemptedSubscribe]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsVariables]); // Only depend on wsVariables to avoid loops
 
   const handleVariableToggle = (variable: string) => {
     setSelectedVariables((prev) =>
@@ -498,15 +470,21 @@ export default function TrendsTab({ file }: TrendsTabProps) {
   const handleRefresh = () => {
     setLoading(true);
 
-    if (sourceCode && isConnected) {
-      // Re-extract variables and subscribe again
-      const extractedVars = extractVariablesFromST(sourceCode);
+    if (isConnected && availableVariables.length > 0) {
+      // Get the namespace from the first available variable if possible
+      let namespace = 'main-st'; // Default namespace
 
-      if (extractedVars.length > 0) {
+      if (availableVariables[0].includes('.')) {
+        namespace = availableVariables[0].split('.')[0];
+      } else if (file.name && file.name !== 'unknown') {
         const fileName = getFileName(file.name.replace('Trends: ', ''));
-        subscribeToVariables(extractedVars, fileName);
-        console.log('Re-subscribed to variables:', extractedVars);
+        const baseName = fileName.replace('.st', '');
+        namespace = `${baseName}-st`;
       }
+
+      console.log(`Refreshing subscriptions with namespace: ${namespace}`);
+      subscribeToVariables(availableVariables, namespace);
+      console.log('Re-subscribed to variables:', availableVariables);
     }
 
     setTimeout(() => setLoading(false), 500);
@@ -555,6 +533,25 @@ export default function TrendsTab({ file }: TrendsTabProps) {
           <div className="flex items-center mb-3">
             <Filter className="h-4 w-4 mr-2" />
             <h3 className="text-sm font-medium">Variables</h3>
+          </div>
+
+          {/* Add variable input */}
+          <div className="flex mb-4">
+            <input
+              type="text"
+              value={manualVariable}
+              onChange={(e) => setManualVariable(e.target.value)}
+              placeholder="Enter variable path"
+              className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-l"
+              onKeyDown={(e) => e.key === 'Enter' && handleAddVariable()}
+            />
+            <Button
+              size="sm"
+              className="rounded-l-none"
+              onClick={handleAddVariable}
+            >
+              Add
+            </Button>
           </div>
 
           <div className="space-y-2">

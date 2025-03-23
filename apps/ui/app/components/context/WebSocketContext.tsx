@@ -57,6 +57,7 @@ interface WebSocketContextType {
   getControllerStatus: (controllerId: string) => boolean;
   isControllerConnecting: (controllerId: string) => boolean;
   subscribeToVariables: (variableNames: string[], filePath: string) => void;
+  setTrendTabOpen: (isOpen: boolean) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -95,6 +96,8 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   const prevVariableCountRef = useRef<number>(0);
   // Ref to track if we've shown the auto-connect toast to avoid showing it on initial page load
   const hasShownAutoConnectToast = useRef<boolean>(false);
+  // Flag to track if there are open trend tabs requiring variable data
+  const hasTrendTabsOpen = useRef<boolean>(false);
 
   // Initialize the default controller - REMOVED
   /*
@@ -757,6 +760,11 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     return isConnecting;
   };
 
+  // Set trend tab open
+  const setTrendTabOpen = (isOpen: boolean) => {
+    hasTrendTabsOpen.current = isOpen;
+  };
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -777,6 +785,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
         getControllerStatus,
         isControllerConnecting,
         subscribeToVariables,
+        setTrendTabOpen,
       }}
     >
       {children}

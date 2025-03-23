@@ -1983,6 +1983,28 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       setIsDeploying(true);
 
       try {
+        // Get proper file path
+        let filePath = 'main-st'; // Use main-st as default namespace
+
+        if (activeFile?.path) {
+          // If we have a path, use it but ensure it has the right format
+          const path = activeFile.path;
+          // Strip any extension to get a clean namespace
+          filePath = path.replace(/\.(st|iec|txt)$/i, '');
+
+          // If path has slashes, extract just the filename
+          if (filePath.includes('/')) {
+            filePath = filePath.substring(filePath.lastIndexOf('/') + 1);
+          }
+
+          // Add -st suffix if it doesn't already end with it
+          if (!filePath.endsWith('-st')) {
+            filePath = `${filePath}-st`;
+          }
+        }
+
+        console.log(`Deploying code with namespace: ${filePath}`);
+
         // Deploy the AST to the controller
         const response = await fetch(CONTROLLER_API.DEPLOY, {
           method: 'POST',
@@ -1992,7 +2014,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           body: JSON.stringify({
             ast: compilerResult.ast,
             sourceCode: compilerResult.sourceCode || '',
-            filePath: activeFile?.path || 'unknown.st',
+            filePath: filePath,
           }),
         });
 

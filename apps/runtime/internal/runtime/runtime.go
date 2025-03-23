@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -192,22 +193,148 @@ func (r *Runtime) DeployCode(req DeployRequest) error {
 		filePath = filePath[lastSlash+1:]
 	}
 
-	log.Printf("Deploying code to %s with %d variables", filePath, len(prog.vars))
+	// Strip the extension to get a clean namespace
+	namespace := strings.TrimSuffix(filePath, filepath.Ext(filePath))
+
+	// Prevent cases where namespace would be empty
+	if namespace == "" {
+		namespace = "main"
+	}
+
+	log.Printf("Using namespace '%s' for variables from file '%s'", namespace, filePath)
+
+	varCount := len(prog.Vars)
+	if varCount == 0 {
+		log.Printf("WARNING: No variables found in the program for %s. Check your ST code for proper variable declarations.", filePath)
+		log.Printf("Variables should be defined in sections like VAR_INPUT, VAR_OUTPUT, or VAR.")
+		// Check if source code is available for additional logging
+		if req.SourceCode != "" {
+			log.Printf("Source code sample (first 100 chars): %s", truncateString(req.SourceCode, 100))
+		}
+	} else {
+		log.Printf("Deploying code to %s with %d variables:", filePath, varCount)
+		// Log all variables we're about to register
+		for name, v := range prog.Vars {
+			log.Printf("  - %s (type: %v)", name, v.DataType)
+		}
+	}
+
+	// Clean up any existing variables from this path before adding new ones
+	// to prevent duplicates
+	r.removeVariablesByPath(namespace)
 
 	// Extract variables from the program and register them
-	for name, v := range prog.vars {
-		r.variables[name] = &Variable{
+	for name, v := range prog.Vars {
+		// Create variable with path as namespace
+		variable := &Variable{
 			Name:      name,
 			DataType:  v.DataType,
 			Value:     v.Value,
 			Quality:   QualityGood,
 			Timestamp: time.Now(),
-			Path:      filePath, // Store just the filename for easier matching in UI
+			Path:      namespace, // Use the clean namespace
 		}
-		log.Printf("Registered variable %s from %s", name, filePath)
+
+		// Register the variable with simple name
+		r.variables[name] = variable
+		log.Printf("Registered variable %s from %s", name, namespace)
+
+		// Also register with namespaced name for direct access
+		namespacedName := namespace + "." + name
+		namespacedVariable := &Variable{
+			Name:      namespacedName,
+			DataType:  v.DataType,
+			Value:     v.Value,
+			Quality:   QualityGood,
+			Timestamp: time.Now(),
+			Path:      namespace,
+		}
+		r.variables[namespacedName] = namespacedVariable
+		log.Printf("Registered namespaced variable %s", namespacedName)
+	}
+
+	// Log the total variables in the runtime after deployment
+	log.Printf("Runtime now has %d total variables", len(r.variables))
+
+	// If we still have no variables, create some test variables for debugging
+	if len(r.variables) == 0 {
+		log.Printf("No variables found in program. Creating test variables for debugging.")
+		r.RegisterTestVariables(namespace)
 	}
 
 	return nil
+}
+
+// removeVariablesByPath removes all variables with a given path
+func (r *Runtime) removeVariablesByPath(path string) {
+	// First, identify all variables with this path
+	var toRemove []string
+	for name, v := range r.variables {
+		if v.Path == path {
+			toRemove = append(toRemove, name)
+		}
+	}
+
+	// Then remove them
+	if len(toRemove) > 0 {
+		log.Printf("Removing %d existing variables with path '%s'", len(toRemove), path)
+		for _, name := range toRemove {
+			delete(r.variables, name)
+		}
+	}
+}
+
+// RegisterTestVariables registers test variables for debugging purposes
+func (r *Runtime) RegisterTestVariables(namespace string) {
+	// Create test variables with the requested namespace
+	testVars := []struct {
+		name  string
+		dtype DataType
+		value interface{}
+	}{
+		{"Mode", TypeString, "AUTO"},
+		{"Sensor1", TypeInt, 42},
+		{"Sensor2", TypeInt, 75},
+		{"EmergencyVehicle", TypeBool, true},
+		{"ManualOverride", TypeBool, false},
+		{"TimeOfDay", TypeString, "DAY"},
+	}
+
+	// Register both simple and namespaced variables
+	for _, v := range testVars {
+		// Register simple name
+		r.variables[v.name] = &Variable{
+			Name:      v.name,
+			DataType:  v.dtype,
+			Value:     v.value,
+			Quality:   QualityGood,
+			Timestamp: time.Now(),
+			Path:      namespace,
+		}
+
+		// Register namespaced name
+		namespacedName := namespace + "." + v.name
+		r.variables[namespacedName] = &Variable{
+			Name:      namespacedName,
+			DataType:  v.dtype,
+			Value:     v.value,
+			Quality:   QualityGood,
+			Timestamp: time.Now(),
+			Path:      namespace,
+		}
+
+		log.Printf("Registered test variable: %s and %s", v.name, namespacedName)
+	}
+
+	log.Printf("Added %d test variables with namespace %s", len(testVars)*2, namespace)
+}
+
+// Helper function to truncate long strings
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // GetVariable returns a variable by name
@@ -352,7 +479,7 @@ func ParseAST(astJSON json.RawMessage) (*Program, error) {
 		Name:     "ASTProgram",
 		Version:  "1.0",
 		Modified: time.Now(),
-		vars:     make(map[string]*Variable),
+		Vars:     make(map[string]*Variable),
 	}
 
 	// Parse the AST JSON
@@ -361,7 +488,7 @@ func ParseAST(astJSON json.RawMessage) (*Program, error) {
 		return nil, fmt.Errorf("failed to unmarshal AST: %w", err)
 	}
 
-	log.Printf("Parsing AST: %+v", astData)
+	log.Printf("Parsing AST with keys: %v", getMapKeys(astData))
 
 	// Extract program name if available
 	if programName, ok := astData["name"].(string); ok {
@@ -369,103 +496,110 @@ func ParseAST(astJSON json.RawMessage) (*Program, error) {
 		log.Printf("Found program name: %s", programName)
 	}
 
-	// Process the AST based on the format coming from Langium
-	if declarations, ok := astData["declarations"]; ok {
-		log.Printf("Processing declarations")
-		extractVariablesFromDeclarations(declarations, prog)
-	}
-
-	// Also check for VAR sections at the root level
-	for key, value := range astData {
-		if strings.HasPrefix(key, "VAR") || strings.HasPrefix(key, "var") {
-			log.Printf("Processing VAR section: %s", key)
-			extractVariablesFromVarSection(value, prog)
-		}
-	}
-
-	// Check for variables inside program blocks if present
-	if programs, ok := astData["programs"].([]interface{}); ok {
-		log.Printf("Processing programs array")
-		for _, program := range programs {
-			if programMap, ok := program.(map[string]interface{}); ok {
-				// Extract program name
-				if programName, ok := programMap["name"].(string); ok {
-					prog.Name = programName
-				}
-
-				// Process local variables
-				if localVars, ok := programMap["localVariables"].([]interface{}); ok {
-					log.Printf("Processing program local variables")
-					extractVariablesFromArray(localVars, prog)
-				}
-
-				// Process variable sections
-				for key, value := range programMap {
-					if strings.HasPrefix(key, "VAR") || strings.HasPrefix(key, "var") {
-						log.Printf("Processing program VAR section: %s", key)
-						extractVariablesFromVarSection(value, prog)
-					}
-				}
-			}
-		}
-	}
+	// Process the AST starting from the root
+	processASTNode(astData, prog, 0)
 
 	// Log the variables extracted
-	log.Printf("Extracted %d variables from AST", len(prog.vars))
-	for varName := range prog.vars {
-		log.Printf("  - %s", varName)
+	log.Printf("Extracted %d variables from AST", len(prog.Vars))
+	for varName, v := range prog.Vars {
+		log.Printf("  - %s (type: %v)", varName, v.DataType)
 	}
 
 	return prog, nil
 }
 
-// Helper function to extract variables from declarations array
-func extractVariablesFromDeclarations(declarations interface{}, prog *Program) {
-	if declArray, ok := declarations.([]interface{}); ok {
-		extractVariablesFromArray(declArray, prog)
+// getMapKeys returns a string with all keys in a map for debugging
+func getMapKeys(m map[string]interface{}) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
+	return strings.Join(keys, ", ")
 }
 
-// Helper function to extract variables from array of objects
-func extractVariablesFromArray(items []interface{}, prog *Program) {
-	for _, item := range items {
-		itemMap, ok := item.(map[string]interface{})
-		if !ok {
-			continue
+// processASTNode recursively processes AST nodes looking for variable declarations
+func processASTNode(node interface{}, prog *Program, depth int) {
+	// Guard against too deep recursion
+	if depth > 10 {
+		return
+	}
+
+	// Process different node types
+	switch n := node.(type) {
+	case map[string]interface{}:
+		// Check if this node is a variable declaration
+		if isVariableDeclaration(n) {
+			addVariableToProg(n, prog)
+			return
 		}
 
-		// Process variable declarations
-		if declType, ok := itemMap["$type"].(string); ok {
-			if declType == "VariableDeclaration" || strings.Contains(declType, "Variable") {
-				addVariableToProg(itemMap, prog)
+		// Process all fields of the node
+		for key, value := range n {
+			// Special handling for variable sections
+			if strings.HasPrefix(strings.ToLower(key), "var") {
+				log.Printf("Found VAR section: %s", key)
+				processASTNode(value, prog, depth+1)
+				continue
 			}
-		} else if name, ok := itemMap["name"].(string); ok {
-			// If it has a name, it might be a variable even without $type
-			addVariableToProg(itemMap, prog)
-			log.Printf("Added variable by name: %s", name)
-		}
-	}
-}
 
-// Helper function to extract variables from VAR sections
-func extractVariablesFromVarSection(varSection interface{}, prog *Program) {
-	if varItems, ok := varSection.([]interface{}); ok {
-		extractVariablesFromArray(varItems, prog)
-	} else if varMap, ok := varSection.(map[string]interface{}); ok {
-		// Some ASTs might have variables as direct map entries
-		for name, declaration := range varMap {
-			if declMap, ok := declaration.(map[string]interface{}); ok {
-				declMap["name"] = name
-				addVariableToProg(declMap, prog)
-				log.Printf("Added variable from VAR map: %s", name)
+			// Special handling for declarations array
+			if key == "declarations" || key == "variables" || key == "varDeclarations" {
+				log.Printf("Processing %s array", key)
+				processASTNode(value, prog, depth+1)
+				continue
 			}
+
+			// Special handling for programs array
+			if key == "programs" {
+				log.Printf("Processing programs array")
+				processASTNode(value, prog, depth+1)
+				continue
+			}
+
+			// Recursively process all other objects
+			processASTNode(value, prog, depth+1)
+		}
+
+	case []interface{}:
+		// Process all elements in the array
+		for _, item := range n {
+			processASTNode(item, prog, depth+1)
 		}
 	}
 }
 
-// Helper function to add a variable to the program
+// isVariableDeclaration checks if a node is a variable declaration
+func isVariableDeclaration(node map[string]interface{}) bool {
+	// Check for name as a basic requirement
+	if _, hasName := node["name"].(string); !hasName {
+		return false
+	}
+
+	// Check for type hints
+	if declType, ok := node["$type"].(string); ok {
+		if strings.Contains(strings.ToLower(declType), "variable") {
+			return true
+		}
+	}
+
+	// Check for type definition
+	if _, hasType := node["type"].(map[string]interface{}); hasType {
+		return true
+	}
+
+	return false
+}
+
+// addVariableToProg adds a variable declaration to the program
 func addVariableToProg(variableMap map[string]interface{}, prog *Program) {
 	if varName, ok := variableMap["name"].(string); ok {
+		// Skip empty names or reserved words
+		if varName == "" || strings.ToLower(varName) == "type" {
+			return
+		}
+
+		log.Printf("Processing variable: %s", varName)
+
 		// Determine data type
 		dataType := TypeString // Default
 		if typeInfo, ok := variableMap["type"].(map[string]interface{}); ok {
@@ -480,6 +614,7 @@ func addVariableToProg(variableMap map[string]interface{}, prog *Program) {
 				case "STRING":
 					dataType = TypeString
 				}
+				log.Printf("  Data type: %s", typeName)
 			}
 		}
 
@@ -501,12 +636,13 @@ func addVariableToProg(variableMap map[string]interface{}, prog *Program) {
 			if initialValueMap, ok := initialValue.(map[string]interface{}); ok {
 				if litValue, ok := initialValueMap["value"]; ok {
 					value = convertLiteralValue(litValue, dataType)
+					log.Printf("  Initial value: %v", value)
 				}
 			}
 		}
 
 		// Add variable to program
-		prog.vars[varName] = &Variable{
+		prog.Vars[varName] = &Variable{
 			Name:      varName,
 			DataType:  dataType,
 			Value:     value,

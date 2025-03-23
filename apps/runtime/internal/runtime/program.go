@@ -15,8 +15,8 @@ type Program struct {
 	Version  string
 	Modified time.Time
 	ast      *ast.Program
-	vars     map[string]*Variable
-	code     []interface{} // Raw statements from AST JSON
+	Vars     map[string]*Variable // Public field for easier debugging
+	code     []interface{}        // Raw statements from AST JSON
 }
 
 // NewProgram creates a new program from source code
@@ -32,7 +32,7 @@ func NewProgram(name, code string) (*Program, error) {
 		Version:  "1.0",
 		Modified: time.Now(),
 		ast:      astProg,
-		vars:     make(map[string]*Variable),
+		Vars:     make(map[string]*Variable),
 	}
 
 	// Initialize variables
@@ -55,7 +55,7 @@ func NewProgram(name, code string) (*Program, error) {
 			variable.Value = defaultValue(variable.DataType)
 		}
 
-		prog.vars[v.Name] = variable
+		prog.Vars[v.Name] = variable
 	}
 
 	return prog, nil
@@ -93,7 +93,7 @@ func (p *Program) executeStatement(stmt ast.Statement) error {
 		if err != nil {
 			return err
 		}
-		v, ok := p.vars[s.Variable.String()]
+		v, ok := p.Vars[s.Variable.String()]
 		if !ok {
 			return fmt.Errorf("undefined variable: %s", s.Variable.String())
 		}
@@ -143,7 +143,7 @@ func (p *Program) executeRawAssignment(stmt map[string]interface{}) error {
 	}
 
 	// Find the variable in our program
-	variable, ok := p.vars[varName]
+	variable, ok := p.Vars[varName]
 	if !ok {
 		return fmt.Errorf("undefined variable: %s", varName)
 	}
@@ -229,7 +229,7 @@ func (p *Program) executeRawIfStatement(stmt map[string]interface{}) error {
 func (p *Program) evaluateExpression(expr ast.Expression) (interface{}, error) {
 	switch e := expr.(type) {
 	case *ast.Variable:
-		v, ok := p.vars[e.Name]
+		v, ok := p.Vars[e.Name]
 		if !ok {
 			return nil, fmt.Errorf("undefined variable: %s", e.Name)
 		}
@@ -275,7 +275,7 @@ func (p *Program) evaluateRawExpression(expr interface{}) (interface{}, error) {
 			return nil, fmt.Errorf("invalid variable reference: missing name")
 		}
 
-		variable, ok := p.vars[varName]
+		variable, ok := p.Vars[varName]
 		if !ok {
 			return nil, fmt.Errorf("undefined variable: %s", varName)
 		}
