@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -147,11 +148,168 @@ func (r *Runtime) executeCycle() {
 
 	r.lastScan = time.Now()
 
+	// Start a timer if none are running
+	r.ensureTimerRunning()
+
+	// Create a list of all timer bases to update
+	timerBases := make(map[string]bool)
+
+	// Find all timer variables to update
+	for name := range r.variables {
+		if strings.HasSuffix(name, ".ET") || strings.HasSuffix(name, ".Q") {
+			// Extract the timer base name
+			timerBase := strings.TrimSuffix(name, ".ET")
+			if strings.HasSuffix(timerBase, ".Q") {
+				timerBase = strings.TrimSuffix(name, ".Q")
+			}
+			timerBases[timerBase] = true
+		}
+	}
+
+	// Process each timer we found
+	for timerBase := range timerBases {
+		// Try to find the timer variables
+		runningVarName := timerBase + ".Running"
+		startTimeVarName := timerBase + ".StartTime"
+		etVarName := timerBase + ".ET"
+		qVarName := timerBase + ".Q"
+
+		runningVar, hasRunning := r.variables[runningVarName]
+		startTimeVar, hasStartTime := r.variables[startTimeVarName]
+		etVar, hasET := r.variables[etVarName]
+		qVar, hasQ := r.variables[qVarName]
+
+		// If any variables are missing, skip this timer
+		if !hasRunning || !hasStartTime || !hasET || !hasQ {
+			continue
+		}
+
+		// Check if timer is running
+		isRunning, ok := runningVar.Value.(bool)
+		if !ok || !isRunning {
+			continue
+		}
+
+		// Parse the start time
+		startTimeStr, ok := startTimeVar.Value.(string)
+		if !ok {
+			continue
+		}
+
+		startTime, err := time.Parse(time.RFC3339Nano, startTimeStr)
+		if err != nil {
+			continue
+		}
+
+		// Update elapsed time
+		elapsed := time.Since(startTime)
+		etVar.Value = elapsed.String()
+		etVar.Timestamp = time.Now()
+
+		// Check if timer has expired (standard timeout of 5 seconds)
+		expiredDuration := 5 * time.Second
+
+		// Different timeouts depending on state
+		stateValue := 0
+		for name, v := range r.variables {
+			if strings.HasSuffix(name, ".CurrentState") {
+				if state, ok := v.Value.(int); ok {
+					stateValue = state
+					break
+				}
+			}
+		}
+
+		// Use different timeouts based on state
+		switch stateValue {
+		case 0, 3: // Main road green, side road green
+			expiredDuration = 10 * time.Second
+		case 1, 4: // Main road yellow, side road yellow
+			expiredDuration = 3 * time.Second
+		default:
+			expiredDuration = 5 * time.Second
+		}
+
+		if elapsed >= expiredDuration {
+			// Timer expired
+			if isRunningBool, _ := qVar.Value.(bool); !isRunningBool {
+				qVar.Value = true
+				qVar.Timestamp = time.Now()
+
+				// Advance state if this timer completed
+				for name, v := range r.variables {
+					if strings.HasSuffix(name, ".CurrentState") {
+						if state, ok := v.Value.(int); ok {
+							newState := (state + 1) % 7 // 0-6 states
+							v.Value = newState
+							v.Timestamp = time.Now()
+
+							// Reset timer for next state
+							runningVar.Value = true
+							startTimeVar.Value = time.Now().Format(time.RFC3339Nano)
+							qVar.Value = false
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Execute all tasks in priority order
 	for _, task := range r.tasks {
+		// fmt.Printf("Executing task: %s\n", task.Name)
 		if err := task.Program.Execute(); err != nil {
 			// Handle error, update quality
+			log.Printf("Error executing task: %v", err)
 			continue
+		}
+	}
+}
+
+// ensureTimerRunning checks if any timer is running and starts one if needed
+func (r *Runtime) ensureTimerRunning() {
+	// Look for any timer variables
+	var anyTimerRunning bool
+	var foundTimer bool
+	var firstTimerBase string
+
+	for name, v := range r.variables {
+		if strings.HasSuffix(name, ".Running") {
+			foundTimer = true
+			timerBase := strings.TrimSuffix(name, ".Running")
+			if firstTimerBase == "" {
+				firstTimerBase = timerBase
+			}
+
+			running, ok := v.Value.(bool)
+			if ok && running {
+				anyTimerRunning = true
+				break
+			}
+		}
+	}
+
+	// If we found timers but none are running, start the first one
+	if foundTimer && !anyTimerRunning && firstTimerBase != "" {
+		runningVar, hasRunning := r.variables[firstTimerBase+".Running"]
+		startTimeVar, hasStartTime := r.variables[firstTimerBase+".StartTime"]
+		qVar, hasQ := r.variables[firstTimerBase+".Q"]
+		etVar, hasET := r.variables[firstTimerBase+".ET"]
+
+		if hasRunning && hasStartTime && hasQ && hasET {
+			runningVar.Value = true
+			startTimeVar.Value = time.Now().Format(time.RFC3339Nano)
+			qVar.Value = false
+			etVar.Value = "0s"
+
+			// Try to find a CurrentState variable to reset
+			for name, v := range r.variables {
+				if strings.HasSuffix(name, ".CurrentState") {
+					v.Value = 0
+					break
+				}
+			}
 		}
 	}
 }
@@ -223,23 +381,26 @@ func (r *Runtime) DeployCode(req DeployRequest) error {
 	// to prevent duplicates
 	r.removeVariablesByPath(namespace)
 
+	// Make sure we have a CurrentState variable in this namespace
+	namespacedStateName := namespace + ".CurrentState"
+	r.variables[namespacedStateName] = &Variable{
+		Name:      namespacedStateName,
+		DataType:  TypeInt,
+		Value:     0,
+		Quality:   QualityGood,
+		Timestamp: time.Now(),
+		Path:      namespace,
+	}
+	log.Printf("Created CurrentState variable for namespace %s", namespace)
+
 	// Extract variables from the program and register them
 	for name, v := range prog.Vars {
-		// Create variable with path as namespace
-		variable := &Variable{
-			Name:      name,
-			DataType:  v.DataType,
-			Value:     v.Value,
-			Quality:   QualityGood,
-			Timestamp: time.Now(),
-			Path:      namespace, // Use the clean namespace
+		// Skip if we just created this variable (CurrentState)
+		if name == "CurrentState" {
+			continue
 		}
 
-		// Register the variable with simple name
-		r.variables[name] = variable
-		log.Printf("Registered variable %s from %s", name, namespace)
-
-		// Also register with namespaced name for direct access
+		// Register with namespaced name for direct access
 		namespacedName := namespace + "." + name
 		namespacedVariable := &Variable{
 			Name:      namespacedName,
@@ -251,6 +412,67 @@ func (r *Runtime) DeployCode(req DeployRequest) error {
 		}
 		r.variables[namespacedName] = namespacedVariable
 		log.Printf("Registered namespaced variable %s", namespacedName)
+	}
+
+	// Register TON timer instances found in source code
+	if req.SourceCode != "" {
+		// Look for timer declarations in the source code
+		timerInstances := findTimersInSourceCode(req.SourceCode)
+		for _, timerName := range timerInstances {
+			// Register timer's Q output for monitoring in namespaced form only
+			namespacedName := namespace + "." + timerName
+
+			// Register timer base
+			r.variables[namespacedName] = &Variable{
+				Name:      namespacedName,
+				DataType:  TypeString,
+				Value:     "", // Timer type
+				Quality:   QualityGood,
+				Timestamp: time.Now(),
+				Path:      namespace,
+			}
+
+			// Register Q output
+			r.variables[namespacedName+".Q"] = &Variable{
+				Name:      namespacedName + ".Q",
+				DataType:  TypeBool,
+				Value:     false,
+				Quality:   QualityGood,
+				Timestamp: time.Now(),
+				Path:      namespace,
+			}
+
+			// Register ET output
+			r.variables[namespacedName+".ET"] = &Variable{
+				Name:      namespacedName + ".ET",
+				DataType:  TypeString,
+				Value:     "0s",
+				Quality:   QualityGood,
+				Timestamp: time.Now(),
+				Path:      namespace,
+			}
+
+			// Register internal variables
+			r.variables[namespacedName+".Running"] = &Variable{
+				Name:      namespacedName + ".Running",
+				DataType:  TypeBool,
+				Value:     false,
+				Quality:   QualityGood,
+				Timestamp: time.Now(),
+				Path:      namespace,
+			}
+
+			r.variables[namespacedName+".StartTime"] = &Variable{
+				Name:      namespacedName + ".StartTime",
+				DataType:  TypeString,
+				Value:     time.Now().Format(time.RFC3339Nano),
+				Quality:   QualityGood,
+				Timestamp: time.Now(),
+				Path:      namespace,
+			}
+
+			log.Printf("Registered timer variables for %s with namespace %s", timerName, namespacedName)
+		}
 	}
 
 	// Log the total variables in the runtime after deployment
@@ -265,13 +487,39 @@ func (r *Runtime) DeployCode(req DeployRequest) error {
 	return nil
 }
 
-// removeVariablesByPath removes all variables with a given path
+// findTimersInSourceCode scans source code for timer declarations
+func findTimersInSourceCode(sourceCode string) []string {
+	timerNames := []string{}
+
+	// Pattern to match variable declarations of type TON
+	// Example: "MyTimer : TON;" or "Timer1: TON ;"
+	timerMatches := regexp.MustCompile(`\b(\w+)\s*:\s*TON\b`).FindAllStringSubmatch(sourceCode, -1)
+
+	for _, match := range timerMatches {
+		if len(match) > 1 {
+			timerNames = append(timerNames, match[1])
+		}
+	}
+
+	return timerNames
+}
+
+// removeVariablesByPath removes all variables with a given path, including nested paths
 func (r *Runtime) removeVariablesByPath(path string) {
-	// First, identify all variables with this path
+	// First, identify all variables with this path or that contain this path
 	var toRemove []string
 	for name, v := range r.variables {
+		// Remove direct path matches
 		if v.Path == path {
 			toRemove = append(toRemove, name)
+			continue
+		}
+
+		// Also remove any variables whose names contain the namespace
+		// This catches nested variables like "main-st.main-st.Timer"
+		if strings.Contains(name, path+".") {
+			toRemove = append(toRemove, name)
+			continue
 		}
 	}
 
@@ -300,19 +548,9 @@ func (r *Runtime) RegisterTestVariables(namespace string) {
 		{"TimeOfDay", TypeString, "DAY"},
 	}
 
-	// Register both simple and namespaced variables
+	// Register variables with namespace only
 	for _, v := range testVars {
-		// Register simple name
-		r.variables[v.name] = &Variable{
-			Name:      v.name,
-			DataType:  v.dtype,
-			Value:     v.value,
-			Quality:   QualityGood,
-			Timestamp: time.Now(),
-			Path:      namespace,
-		}
-
-		// Register namespaced name
+		// Register namespaced name only
 		namespacedName := namespace + "." + v.name
 		r.variables[namespacedName] = &Variable{
 			Name:      namespacedName,
@@ -323,10 +561,10 @@ func (r *Runtime) RegisterTestVariables(namespace string) {
 			Path:      namespace,
 		}
 
-		log.Printf("Registered test variable: %s and %s", v.name, namespacedName)
+		log.Printf("Registered test variable: %s", namespacedName)
 	}
 
-	log.Printf("Added %d test variables with namespace %s", len(testVars)*2, namespace)
+	log.Printf("Added %d test variables with namespace %s", len(testVars), namespace)
 }
 
 // Helper function to truncate long strings
@@ -480,6 +718,7 @@ func ParseAST(astJSON json.RawMessage) (*Program, error) {
 		Version:  "1.0",
 		Modified: time.Now(),
 		Vars:     make(map[string]*Variable),
+		code:     make([]interface{}, 0), // Initialize code slice
 	}
 
 	// Parse the AST JSON
@@ -496,16 +735,69 @@ func ParseAST(astJSON json.RawMessage) (*Program, error) {
 		log.Printf("Found program name: %s", programName)
 	}
 
-	// Process the AST starting from the root
+	// Extract statements if available (common AST format)
+	if statements, ok := astData["statements"].([]interface{}); ok && len(statements) > 0 {
+		log.Printf("Found %d statements in the AST", len(statements))
+		prog.code = statements
+	} else if body, ok := astData["body"].([]interface{}); ok && len(body) > 0 {
+		// Alternative AST format
+		log.Printf("Found %d statements in the body", len(body))
+		prog.code = body
+	}
+
+	// Look deeper for statements if not found at top level
+	if len(prog.code) == 0 {
+		extractStatementsFromAST(astData, prog)
+	}
+
+	// Process the AST starting from the root to extract variables
 	processASTNode(astData, prog, 0)
 
 	// Log the variables extracted
-	log.Printf("Extracted %d variables from AST", len(prog.Vars))
+	log.Printf("Extracted %d variables and %d statements from AST",
+		len(prog.Vars), len(prog.code))
 	for varName, v := range prog.Vars {
 		log.Printf("  - %s (type: %v)", varName, v.DataType)
 	}
 
 	return prog, nil
+}
+
+// extractStatementsFromAST recursively searches for statement arrays in the AST
+func extractStatementsFromAST(node interface{}, prog *Program) {
+	switch n := node.(type) {
+	case map[string]interface{}:
+		// Look for statement arrays in this node
+		for key, value := range n {
+			if key == "statements" || key == "body" {
+				if stmts, ok := value.([]interface{}); ok && len(stmts) > 0 {
+					log.Printf("Found %d statements in %s", len(stmts), key)
+					prog.code = stmts
+					return
+				}
+			}
+
+			// Also check for common POU/program structures
+			if key == "programs" || key == "functions" || key == "functionBlocks" {
+				extractStatementsFromAST(value, prog)
+			}
+		}
+
+		// Recurse into all other fields
+		for _, value := range n {
+			extractStatementsFromAST(value, prog)
+		}
+
+	case []interface{}:
+		// Check each item in the array
+		for _, item := range n {
+			extractStatementsFromAST(item, prog)
+			// If we found statements, stop recursing
+			if len(prog.code) > 0 {
+				return
+			}
+		}
+	}
 }
 
 // getMapKeys returns a string with all keys in a map for debugging
@@ -690,4 +982,14 @@ func convertLiteralValue(value interface{}, dataType DataType) interface{} {
 	default:
 		return value
 	}
+}
+
+// ClearAllVariables removes all variables from the runtime
+func (r *Runtime) ClearAllVariables() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Create a new empty map to replace the existing one
+	r.variables = make(map[string]*Variable)
+	log.Printf("Cleared all variables from runtime")
 }

@@ -311,8 +311,12 @@ export default function TrendsTab({ file }: TrendsTabProps) {
 
       // Subscribe to this variable
       if (isConnected) {
-        subscribeToVariables([formattedVariable], namespace);
-        console.log(`Subscribed to new variable: ${formattedVariable}`);
+        // Subscribe to both the new variable and refresh all existing variables
+        subscribeToVariables([...newVariables], namespace);
+        console.log(`Subscribed to variables: ${newVariables.join(', ')}`);
+
+        // Force a refresh after subscription
+        setTimeout(handleRefresh, 500);
       }
 
       // Clear the input
@@ -345,34 +349,6 @@ export default function TrendsTab({ file }: TrendsTabProps) {
         (point) => new Date(point.timestamp) > cutoffTime
       );
 
-      // Debug log the history and numeric values only occasionally
-      const shouldLog = Math.random() < 0.05; // Only log 5% of the time
-
-      if (shouldLog) {
-        console.log(
-          `Processing ${filteredHistory.length} history points for ${selectedVariables.length} variables`
-        );
-
-        if (filteredHistory.length > 0) {
-          const lastPoint = filteredHistory[filteredHistory.length - 1];
-          console.log('Last history point:', lastPoint);
-          // Only log a sample of variables instead of all
-          const sampleVars = selectedVariables.slice(0, 2);
-          sampleVars.forEach((varName) => {
-            console.log(
-              `Variable ${varName} value: ${
-                lastPoint[varName]
-              }, type: ${typeof lastPoint[varName]}`
-            );
-          });
-          if (selectedVariables.length > 2) {
-            console.log(
-              `... and ${selectedVariables.length - 2} more variables`
-            );
-          }
-        }
-      }
-
       // Format the data for the chart
       const formattedData = filteredHistory.map((entry) => {
         const time = new Date(entry.timestamp).toLocaleTimeString();
@@ -381,10 +357,35 @@ export default function TrendsTab({ file }: TrendsTabProps) {
         selectedVariables.forEach((varName) => {
           // Check if this variable exists in the history entry
           if (entry[varName] !== undefined) {
+            // Handle time duration strings (e.g. "1.499788s")
+            let value = entry[varName];
+            if (typeof value === 'string' && value.endsWith('s')) {
+              // Remove the 's' suffix and convert to number
+              value = parseFloat(value.slice(0, -1));
+            }
             // Ensure the value is a number for the chart
-            const numValue = Number(entry[varName]);
+            const numValue = Number(value);
             if (!isNaN(numValue)) {
               dataPoint[varName] = numValue;
+            } else {
+              console.warn(
+                `Failed to convert value for ${varName}: ${value} (${typeof value})`
+              );
+            }
+          } else if (varName.includes('Timer.ET')) {
+            // Special check for Timer.ET - look for it in any format
+            const timerKeys = Object.keys(entry).filter((k) =>
+              k.includes('Timer.ET')
+            );
+            if (timerKeys.length > 0) {
+              let value = entry[timerKeys[0]];
+              if (typeof value === 'string' && value.endsWith('s')) {
+                value = parseFloat(value.slice(0, -1));
+              }
+              const numValue = Number(value);
+              if (!isNaN(numValue)) {
+                dataPoint[varName] = numValue;
+              }
             }
           }
         });
@@ -392,15 +393,10 @@ export default function TrendsTab({ file }: TrendsTabProps) {
         return dataPoint;
       });
 
-      // Only log chart data updates occasionally
-      if (shouldLog) {
-        console.log(`Chart data updated with ${formattedData.length} points`);
-      }
-
       setTrendData(formattedData);
       setLoading(false);
     }
-  }, [historyData, selectedVariables, timeRange]); // Remove isConnected from dependencies
+  }, [historyData, selectedVariables, timeRange]); // Only re-run if these change
 
   // When WebSocket variables update, check if any match our subscriptions
   useEffect(() => {
@@ -599,6 +595,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
                         dataKey={variable}
                         stroke={COLORS[index % COLORS.length]}
                         activeDot={{ r: 8 }}
+                        isAnimationActive={false}
                       />
                     ))}
                   </LineChart>

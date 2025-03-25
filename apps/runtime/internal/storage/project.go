@@ -27,6 +27,15 @@ type ProjectMetadata struct {
 	Tags           []string  `json:"tags"`
 }
 
+// Resource represents a device or connection in the project configuration
+type Resource struct {
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Type        string      `json:"type"`
+	Description string      `json:"description"`
+	Properties  interface{} `json:"properties"`
+}
+
 // ProjectConfig contains the configuration for a project
 type ProjectConfig struct {
 	Name        string `json:"name"`

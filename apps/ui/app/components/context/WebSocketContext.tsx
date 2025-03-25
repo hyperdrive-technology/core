@@ -468,8 +468,6 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          // Reduce log frequency - only log occasionally for status messages
-          const shouldLog = Math.random() < 0.1; // only log ~10% of messages
 
           if (data.type === 'update') {
             if (data.status) {
@@ -480,26 +478,10 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
               // Add the controller ID to the variable path
               const controllerVariables: VariableMap = {};
 
-              // Drastically reduce logging - only log ~1% of the time
-              const shouldLog = Math.random() < 0.01;
-
-              // Only log if variables exist AND we've won the logging lottery
-              const hasAnyVars = Object.keys(data.variables).length > 0;
-              if (hasAnyVars && shouldLog) {
-                console.log('Raw variables received:', data.variables);
-              }
-
+              // Process variables without excessive logging
               Object.entries(data.variables).forEach(
                 ([path, vars]: [string, any]) => {
                   const controllerPath = `${controllerId}:${path}`;
-
-                  // Only log detailed variable info if we have few paths AND we've won the logging lottery
-                  if (Object.keys(data.variables).length < 3 && shouldLog) {
-                    console.log(
-                      `Processing variables for path: ${controllerPath}, count: ${vars.length}`
-                    );
-                  }
-
                   controllerVariables[controllerPath] = vars;
                 }
               );
@@ -510,15 +492,6 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
                   ...prev,
                   ...controllerVariables,
                 };
-
-                // Only log if something changed
-                if (JSON.stringify(prev) !== JSON.stringify(merged)) {
-                  console.log(
-                    `Updated variables, now have ${
-                      Object.keys(merged).length
-                    } paths`
-                  );
-                }
 
                 return merged;
               });
@@ -541,10 +514,20 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
                     typeof variable.Value === 'string' ||
                     typeof variable.Value === 'boolean'
                   ) {
-                    // Try to convert string or boolean to number
-                    const parsed = Number(variable.Value);
-                    if (!isNaN(parsed)) {
-                      numericValue = parsed;
+                    // Handle time duration strings (e.g. "1.499788s")
+                    if (
+                      typeof variable.Value === 'string' &&
+                      variable.Value.endsWith('s')
+                    ) {
+                      // Remove the 's' suffix and convert to number
+                      const timeString = variable.Value.slice(0, -1);
+                      numericValue = parseFloat(timeString);
+                    } else {
+                      // Try to convert string or boolean to number
+                      const parsed = Number(variable.Value);
+                      if (!isNaN(parsed)) {
+                        numericValue = parsed;
+                      }
                     }
                   }
 
@@ -555,30 +538,20 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
                     newPoint[varKey] = numericValue;
                     // Also add without controller prefix for easier access
                     newPoint[variable.Name] = numericValue;
+                  } else {
+                    // For non-numeric values, also add the raw value so it can be processed later
+                    if (typeof variable.Value === 'string') {
+                      const varKey = `${controllerId}:${variable.Name}`;
+                      newPoint[varKey] = variable.Value;
+                      newPoint[variable.Name] = variable.Value;
+                      hasNumericVars = true; // Still update history for string values
+                    }
                   }
                 });
               });
 
               // Only update history if we have numeric variables
               if (hasNumericVars) {
-                // Log the history update very rarely (5% of the previous 20% = 1% of the time)
-                const shouldLogHistory = Math.random() < 0.05 && shouldLog;
-                if (shouldLogHistory) {
-                  console.log(
-                    `Adding history point with ${
-                      Object.keys(newPoint).length - 1
-                    } variables`
-                  );
-                  console.log(
-                    'Sample values:',
-                    Object.entries(newPoint)
-                      .filter(([k]) => k !== 'timestamp')
-                      .slice(0, 3)
-                      .map(([k, v]) => `${k}: ${v}`)
-                      .join(', ')
-                  );
-                }
-
                 setHistoryData((prev) => {
                   const updated = [...prev, newPoint];
                   // Keep last 100 points
