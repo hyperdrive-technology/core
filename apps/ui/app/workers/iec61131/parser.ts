@@ -894,33 +894,33 @@ export function validateIEC61131Document(
     console.log('Token type counts:', tokenCounts);
 
     // Debug: Log time literals and direct addresses specifically
-    console.log('TIME_LITERAL tokens:');
-    lexResult.tokens
-      .filter((token) => token.tokenType.name === 'TIME_LITERAL')
-      .forEach((token) => {
-        console.log(
-          `  ${token.image} at line ${token.startLine}:${token.startColumn}`
-        );
-      });
+    // console.log('TIME_LITERAL tokens:');
+    // lexResult.tokens
+    //   .filter((token) => token.tokenType.name === 'TIME_LITERAL')
+    //   .forEach((token) => {
+    //     console.log(
+    //       `  ${token.image} at line ${token.startLine}:${token.startColumn}`
+    //     );
+    //   });
 
-    console.log('DIRECT_ADDRESS tokens:');
-    lexResult.tokens
-      .filter((token) => token.tokenType.name === 'DIRECT_ADDRESS')
-      .forEach((token) => {
-        console.log(
-          `  ${token.image} at line ${token.startLine}:${token.startColumn}`
-        );
-      });
+    // console.log('DIRECT_ADDRESS tokens:');
+    // lexResult.tokens
+    //   .filter((token) => token.tokenType.name === 'DIRECT_ADDRESS')
+    //   .forEach((token) => {
+    //     console.log(
+    //       `  ${token.image} at line ${token.startLine}:${token.startColumn}`
+    //     );
+    //   });
 
     // Debug: Log the tokens to see what's being recognized
-    console.log('Tokens recognized (first 50 and last 50):');
-    lexResult.tokens.forEach((token, index) => {
-      if (index < 50 || index > lexResult.tokens.length - 50) {
-        console.log(
-          `Token ${index}: ${token.tokenType.name} - '${token.image}' at line ${token.startLine}:${token.startColumn}`
-        );
-      }
-    });
+    // console.log('Tokens recognized (first 50 and last 50):');
+    // lexResult.tokens.forEach((token, index) => {
+    //   if (index < 50 || index > lexResult.tokens.length - 50) {
+    //     console.log(
+    //       `Token ${index}: ${token.tokenType.name} - '${token.image}' at line ${token.startLine}:${token.startColumn}`
+    //     );
+    //   }
+    // });
 
     // Check for lexing errors
     const lexerDiagnostics = lexResult.errors.map((error) => ({

@@ -463,7 +463,7 @@ export class IEC61131Visitor {
   }
 
   private visitAssignmentStmt(cst: IEC61131CstNode): Assignment {
-    console.log('Visiting assignment statement:', JSON.stringify(cst.children));
+    // console.log('Visiting assignment statement:', JSON.stringify(cst.children));
 
     let target: LeftExpression;
 

@@ -9,10 +9,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { RefreshCw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -20,9 +21,16 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { CompilationResult, useIECCompiler } from '../hooks/useIECCompiler';
 import { CONTROLLER_API } from '../utils/constants';
+import { IECFile } from '../utils/iec-file-loader';
 import { useWebSocket } from './context/WebSocketContext';
 import { FileNode } from './types';
+
+interface HistoryEntry {
+  time: number;
+  [variablePath: string]: number | string | undefined; // Allow string/number values
+}
 
 interface TrendsTabProps {
   file: FileNode;
@@ -97,45 +105,59 @@ const fetchFileContent = async (
   }
 };
 
-// Extract variables from an AST
-const extractVariablesFromAST = (ast: any): string[] => {
-  const variables: string[] = [];
+// Placeholder for the AST extraction function - NEEDS IMPLEMENTATION
+const extractVariablesFromAST = (
+  ast: any,
+  currentNamespace: string
+): string[] => {
+  console.log('Processing AST structure for variable extraction');
+  const variableSet = new Set<string>(); // Use a Set to avoid duplicates
 
-  if (!ast || typeof ast !== 'object') {
-    console.error('Invalid AST format:', ast);
-    return variables;
+  // Get the program declaration from the AST
+  if (ast?.programs && ast.programs.length > 0) {
+    // Use the first program in the programs array
+    const pou = ast.programs[0];
+
+    if (pou) {
+      console.log(`Found POU: ${pou.name} in AST`);
+
+      // Access the variable declarations
+      const varDeclarations = pou.varDeclarations || [];
+      console.log(
+        `Found ${varDeclarations.length} variable declaration sections`
+      );
+
+      if (Array.isArray(varDeclarations)) {
+        varDeclarations.forEach((varDecl: any, sectionIndex: number) => {
+          if (varDecl.variables && Array.isArray(varDecl.variables)) {
+            console.log(
+              `Processing section ${sectionIndex} with ${varDecl.variables.length} variables`
+            );
+
+            varDecl.variables.forEach((variable: any) => {
+              // In the AST, the structure is { name: { value: 'VariableName' } }
+              const varName = variable.name?.value || variable.name;
+              if (varName) {
+                const fullPath = `${currentNamespace}.${varName}`;
+                variableSet.add(fullPath); // Using Set to avoid duplicates
+                console.log(`-> Found variable: ${fullPath}`);
+              }
+            });
+          }
+        });
+      }
+    }
+  } else {
+    console.log('No programs found in AST');
   }
 
-  console.log('Extracting variables from AST:', ast);
+  // Convert Set to Array
+  const variables = Array.from(variableSet);
 
-  // Try to find declarations in the AST
-  try {
-    if (ast.declarations && Array.isArray(ast.declarations)) {
-      // Iterate through all declarations
-      ast.declarations.forEach((decl: any) => {
-        if (decl.$type === 'VariableDeclaration' && decl.name) {
-          variables.push(decl.name);
-        }
-      });
-    }
-
-    // Check for variables in programs or configurations
-    if (ast.programs && Array.isArray(ast.programs)) {
-      ast.programs.forEach((program: any) => {
-        if (program.localVariables && Array.isArray(program.localVariables)) {
-          program.localVariables.forEach((variable: any) => {
-            if (variable.name) {
-              variables.push(variable.name);
-            }
-          });
-        }
-      });
-    }
-  } catch (error) {
-    console.error('Error extracting variables from AST:', error);
-  }
-
-  console.log('Extracted variables:', variables);
+  console.log(
+    `AST extraction for ${currentNamespace} returned ${variables.length} variables:`,
+    variables
+  );
   return variables;
 };
 
@@ -143,119 +165,84 @@ const COLORS = [
   '#8884d8',
   '#82ca9d',
   '#ffc658',
-  '#ff8042',
-  '#0088fe',
+  '#ff7300',
+  '#0088FE',
   '#00C49F',
+  '#FFBB28',
+  '#FF8042',
 ];
 
 // Helper to format timestamp
-const formatTimestamp = (timestamp: number | string | undefined) => {
-  if (!timestamp) return 'N/A';
+const formatTimestamp = (timestamp: string | number | undefined): string => {
+  if (!timestamp) return '-';
   try {
-    return new Date(timestamp).toLocaleTimeString();
-  } catch {
-    return 'Invalid Date';
+    const date =
+      typeof timestamp === 'number' ? new Date(timestamp) : new Date(timestamp);
+    if (isNaN(date.getTime())) return '-'; // Invalid date
+    // Format as HH:MM:SS
+    return date.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch (e) {
+    return '-';
   }
 };
 
-// Type for historical data entries (assuming structure)
-interface HistoryEntry {
-  time: number | string; // Allow string initially from data
-  [variablePath: string]: any; // Variable values keyed by path
-}
+// Example Custom Tooltip (adjust based on actual needs)
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const time = formatTimestamp(label);
+    return (
+      <div className="bg-background border rounded-md p-2 shadow-lg text-sm">
+        <p className="font-semibold mb-1">Time: {time}</p>
+        {payload.map((entry: any, index: number) => (
+          <p key={index} style={{ color: entry.color }}>
+            {`${entry.name}: ${entry.value}`}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
 
-export default function TrendsTab({ file }: TrendsTabProps) {
+export function TrendsTab({ file }: TrendsTabProps) {
+  // Add the IEC compiler hook
+  const { compile, status: compileStatus } = useIECCompiler();
+
   const {
     isConnected,
-    variables: wsVariables, // This is VariableMap: { [path: string]: Variable[] }
-    historyData, // This is any[], assumed to be HistoryEntry[]
+    variables: wsVariables,
+    historyData,
     subscribeToVariables,
     setTrendTabOpen,
+    controllers,
   } = useWebSocket();
   const [availableVariables, setAvailableVariables] = useState<string[]>([]);
   const [selectedVariables, setSelectedVariables] = useState<string[]>([]);
-  const [timeRange, setTimeRange] = useState<'1m' | '5m' | '15m' | '1h'>('5m');
+  const [timeRange, setTimeRange] = useState<string>('Last 5m'); // Example
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [trendData, setTrendData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [manualVariable, setManualVariable] = useState<string>('');
   const [hasAttemptedSubscribe, setHasAttemptedSubscribe] = useState(false);
+  // State to track expanded structs
+  const [expandedStructs, setExpandedStructs] = useState<Set<string>>(
+    new Set()
+  );
+  // State to hold the latest relevant compilation result
+  const [latestCompilationResult, setLatestCompilationResult] =
+    useState<CompilationResult | null>(null);
+  const [status, setStatus] = useState<
+    'idle' | 'waiting' | 'processing' | 'error' | 'success'
+  >('idle');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Notify WebSocketContext when the trend tab is opened
-  useEffect(() => {
-    setTrendTabOpen(true);
-
-    // Clean up when component unmounts
-    return () => {
-      setTrendTabOpen(false);
-    };
-  }, [setTrendTabOpen]);
-
-  // Initialize with variables based on file name
-  useEffect(() => {
-    setLoading(true);
-    const fileName = getFileName(file.name);
-    let namespace = 'main-st';
-    if (fileName && fileName !== 'unknown' && fileName !== 'trends') {
-      const baseName = fileName.replace('.st', '').replace('Trends: ', '');
-      namespace = `${baseName}-st`;
-    }
-
-    const fetchSTCode = async () => {
-      let success = false; // Flag to track if we successfully set vars
-      try {
-        const response = await fetch(CONTROLLER_API.DOWNLOAD_AST(namespace));
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.sourceCode) {
-            const extractedVars = extractVariablesFromST(data.sourceCode);
-
-            const namespacedVars = extractedVars.map(
-              (v) => `${namespace}.${v}`
-            );
-
-            if (namespacedVars.length > 0) {
-              setAvailableVariables(namespacedVars);
-              setSelectedVariables(
-                namespacedVars.slice(0, Math.min(4, namespacedVars.length))
-              );
-              if (isConnected) {
-                subscribeToVariables(namespacedVars, namespace);
-              }
-              success = true; // Mark success
-            }
-          }
-        }
-      } catch (error) {
-        console.error('TRENDS_INIT: Error during fetch/extraction:', error);
-      }
-
-      // Fallback logic ONLY if extraction failed
-      if (!success) {
-        const fallbackVars = [
-          `${namespace}.Mode`,
-          `${namespace}.Sensor1`,
-          `${namespace}.Sensor2`,
-          `${namespace}.EmergencyVehicle`,
-          `${namespace}.ManualOverride`,
-          `${namespace}.TimeOfDay`,
-        ];
-        setAvailableVariables(fallbackVars);
-        setSelectedVariables(fallbackVars.slice(0, 2));
-        if (isConnected) {
-          subscribeToVariables(fallbackVars, namespace);
-        }
-      }
-
-      setLoading(false);
-    };
-
-    fetchSTCode();
-  }, [file.name, isConnected, subscribeToVariables]);
-
-  // Get the file name without path
-  const getFileName = (filename: string) => {
+  // Add a helper function to extract filename from path - MOVED UP before useMemo
+  const extractFileName = (filename: string) => {
     // Extract just the filename from the full path if necessary
     const cleanName = filename.replace('Trends: ', '');
     console.log('Clean file name:', cleanName);
@@ -264,6 +251,259 @@ export default function TrendsTab({ file }: TrendsTabProps) {
     }
     return cleanName;
   };
+
+  // Derive namespace from file name
+  const namespace = useMemo(() => {
+    if (!file.name || file.name === 'unknown') return null;
+    const cleanedName = extractFileName(file.name.replace('Trends: ', ''));
+    return cleanedName ? `${cleanedName.replace('.st', '')}-st` : null;
+  }, [file.name]);
+
+  // Notify WebSocketContext when the trend tab is opened/closed
+  useEffect(() => {
+    setTrendTabOpen(true);
+    return () => {
+      setTrendTabOpen(false);
+    };
+  }, [setTrendTabOpen]);
+
+  // Effect to reset state when the file changes
+  useEffect(() => {
+    setStatus('waiting'); // Start in waiting state for the new file
+    setErrorMessage(null);
+    setLatestCompilationResult(null);
+    setAvailableVariables([]);
+    setSelectedVariables([]);
+    setTrendData([]);
+    setExpandedStructs(new Set());
+    console.log(
+      `TrendsTab: Resetting state for new file/namespace: ${namespace}`
+    );
+  }, [namespace]); // Reset when namespace changes
+
+  // Add effect to automatically compile the file when component mounts
+  useEffect(() => {
+    if (file.name && namespace) {
+      console.log(`Auto-compiling file: ${file.name} for Trends tab`);
+
+      const compileFile = async () => {
+        let fileContent = file.content;
+
+        // If content is not available, try to fetch it
+        if (!fileContent && namespace) {
+          try {
+            console.log(
+              `Fetching source code for ${namespace} before compilation`
+            );
+            const response = await fetch(
+              CONTROLLER_API.DOWNLOAD_AST(namespace)
+            );
+
+            if (response.ok) {
+              const data = await response.json();
+              if (data.sourceCode) {
+                fileContent = data.sourceCode;
+                console.log(
+                  `Successfully fetched source code for ${namespace}`
+                );
+              } else {
+                console.warn(
+                  `Source code not found in response for ${namespace}`
+                );
+                return; // Can't compile without content
+              }
+            } else {
+              console.error(
+                `Failed to fetch source code for ${namespace}. Status: ${response.status} ${response.statusText}`
+              );
+              return; // Can't compile without content
+            }
+          } catch (error) {
+            console.error(
+              'Error fetching file content for compilation:',
+              error
+            );
+            return; // Can't compile without content
+          }
+        }
+
+        if (fileContent) {
+          // Create IECFile object for compilation
+          const fileToCompile: IECFile = {
+            fileName: file.name.replace('Trends: ', ''),
+            content: fileContent,
+          };
+
+          // Trigger compilation
+          compile([fileToCompile]);
+
+          // The compilation result will be handled by the existing event listener
+          // for 'iec-compilation-result' events
+        } else {
+          console.error(`Cannot compile ${file.name}: No content available`);
+        }
+      };
+
+      compileFile();
+    }
+  }, [file.name, file.content, namespace, compile]);
+
+  // Effect to listen for global compilation results
+  useEffect(() => {
+    if (!namespace) return; // Don't listen if we don't have a namespace
+
+    const handleCompilationResult = (event: Event) => {
+      const customEvent = event as CustomEvent<CompilationResult>;
+      const resultData = customEvent.detail;
+
+      console.log('Received iec-compilation-result event:', resultData);
+
+      // Simplified: Store the received result directly. The processing effect will handle it.
+      setLatestCompilationResult(resultData);
+
+      // Basic check: Does the AST contain a program matching our derived name?
+      /*
+      let isRelevant = false;
+      if (resultData.ast) {
+        const programName = namespace.replace('-st', '');
+        const programs = resultData.ast.programs || [];
+        if (programs.some((p: any) => p.name === programName)) {
+          isRelevant = true;
+        }
+        // NOTE: This relevance check might need to be more sophisticated
+        // depending on the exact AST structure and how filenames/POUs relate.
+      }
+
+      if (isRelevant) {
+        console.log(
+          `Compilation result IS relevant to ${namespace}. Storing it.`
+        );
+        setLatestCompilationResult(resultData);
+      } else {
+        console.log(
+          `Compilation result is NOT relevant to ${namespace}. Ignoring.`
+        );
+      }
+      */
+    };
+
+    window.addEventListener('iec-compilation-result', handleCompilationResult);
+    console.log(
+      `TrendsTab for ${namespace} listening for compilation results.`
+    );
+
+    return () => {
+      window.removeEventListener(
+        'iec-compilation-result',
+        handleCompilationResult
+      );
+      console.log(`TrendsTab for ${namespace} stopped listening.`);
+    };
+  }, [namespace]); // Re-attach listener if namespace changes
+
+  // Effect to process the stored compilation result and extract variables
+  useEffect(() => {
+    if (!namespace) {
+      setStatus('waiting'); // Cannot proceed without namespace
+      setErrorMessage(null);
+      return;
+    }
+
+    if (latestCompilationResult) {
+      if (latestCompilationResult.success && latestCompilationResult.ast) {
+        setStatus('processing');
+        setErrorMessage(null);
+        console.log(`Processing AST for ${namespace}...`);
+        try {
+          const extractedVars = extractVariablesFromAST(
+            latestCompilationResult.ast,
+            namespace
+          );
+          console.log(
+            `Extracted ${extractedVars.length} vars for ${namespace}:`,
+            extractedVars
+          );
+
+          if (extractedVars.length > 0) {
+            setAvailableVariables(extractedVars);
+
+            // Select the first few variables automatically (up to 4)
+            const initialSelectedVars = extractedVars.slice(
+              0,
+              Math.min(4, extractedVars.length)
+            );
+            setSelectedVariables(initialSelectedVars);
+
+            if (isConnected) {
+              console.log(
+                `Subscribing to ${extractedVars.length} extracted variables from AST for ${namespace}.`
+              );
+              subscribeToVariables(extractedVars, namespace);
+              setHasAttemptedSubscribe(true);
+            }
+
+            setStatus('success');
+          } else {
+            console.log(`No variables extracted from AST for ${namespace}.`);
+            setAvailableVariables([]);
+            setSelectedVariables([]);
+            setStatus('error');
+            setErrorMessage(
+              `No variables found in the compiled code. Check that the file contains variable declarations.`
+            );
+          }
+        } catch (extractionError: any) {
+          console.error(
+            `Error extracting variables from AST for ${namespace}:`,
+            extractionError
+          );
+          setAvailableVariables([]);
+          setStatus('error');
+          setErrorMessage(
+            `Failed to extract variables from compiled code: ${extractionError.message}`
+          );
+        }
+      } else if (!latestCompilationResult.success) {
+        // Handle compilation failure
+        setStatus('error');
+        setErrorMessage(
+          `Compilation failed for ${namespace}. Check compile output panel.`
+        );
+        setAvailableVariables([]);
+        console.error(
+          `Compilation failed for ${namespace}, diagnostics: `,
+          latestCompilationResult.diagnostics
+        );
+      }
+    } else if (status !== 'success' && status !== 'error') {
+      // If no relevant result yet, remain in waiting state
+      setStatus('waiting');
+      setErrorMessage(null); // Clear previous error message if any
+      setAvailableVariables([]); // Ensure vars are cleared
+    }
+  }, [
+    latestCompilationResult,
+    namespace,
+    isConnected,
+    subscribeToVariables,
+    status,
+  ]);
+
+  // Helper to re-check relevance within the processing effect
+  // (Reduces duplication from the event listener)
+  // REMOVED - Relevance check simplified
+  /*
+  const isCompilationResultRelevant = (
+    result: CompilationResult | null,
+    currentNamespace: string | null
+  ): boolean => {
+    if (!result?.ast || !currentNamespace) return false;
+    const programName = currentNamespace.replace('-st', '');
+    const programs = result.ast.programs || [];
+    return programs.some((p: any) => p.name === programName);
+    // Add more sophisticated checks if needed
+  };
+  */
 
   // Add a new variable manually
   const handleAddVariable = () => {
@@ -281,7 +521,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
       !file.name.includes('Trends:')
     ) {
       // Try to get namespace from file name
-      const fileName = getFileName(file.name);
+      const fileName = extractFileName(file.name);
       const baseName = fileName.replace('.st', '');
       namespace = `${baseName}-st`;
     }
@@ -304,7 +544,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
       // Subscribe to this variable
       if (isConnected) {
         // Subscribe to both the new variable and refresh all existing variables
-        subscribeToVariables([...newVariables], namespace);
+        subscribeToVariables(newVariables, namespace);
         console.log(`Subscribed to variables: ${newVariables.join(', ')}`);
 
         // Force a refresh after subscription
@@ -453,7 +693,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
       if (availableVariables[0].includes('.')) {
         namespace = availableVariables[0].split('.')[0];
       } else if (file.name && file.name !== 'unknown') {
-        const fileName = getFileName(file.name.replace('Trends: ', ''));
+        const fileName = extractFileName(file.name.replace('Trends: ', ''));
         const baseName = fileName.replace('.st', '');
         namespace = `${baseName}-st`;
       }
@@ -466,29 +706,71 @@ export default function TrendsTab({ file }: TrendsTabProps) {
     setTimeout(() => setLoading(false), 500);
   };
 
-  // Helper to find the actual key in wsVariables matching the simple path suffix
-  const findWsVariableKey = (simplePath: string): string | undefined => {
-    const targetSuffix = `:${simplePath}`;
-    const foundKey = Object.keys(wsVariables).find((key) =>
-      key.includes(targetSuffix)
-    );
-    return foundKey;
-  };
-
   // Function to get latest value for a variable
   const getLatestValue = (variablePath: string): any => {
-    const actualKey = findWsVariableKey(variablePath);
-    const latestUpdateArray = actualKey ? wsVariables[actualKey] : undefined;
-    const value = latestUpdateArray?.[0]?.Value ?? 'N/A';
-    return value;
+    // variablePath is like "namespace.VariableName" e.g., "main-st.Counter"
+    const parts = variablePath.split('.');
+    if (parts.length < 2) return 'N/A'; // Invalid format
+
+    const namespace = parts[0];
+    const targetName = parts.slice(1).join('.'); // Handle names with dots like "MyStruct.Field1"
+
+    // console.log(`DEBUG: getLatestValue searching for ns=${namespace}, name=${targetName}`);
+
+    for (const wsKey in wsVariables) {
+      // wsKey is like "controllerId:filePath" e.g., "default:main-st"
+      const keyParts = wsKey.split(':');
+      if (keyParts.length < 2) continue; // Skip invalid keys
+
+      const filePath = keyParts[1];
+
+      if (filePath === namespace) {
+        const variableArray = wsVariables[wsKey];
+        // variableArray is Variable[] = [{ Name: string, Value: any, Timestamp: string, ... }]
+        const foundVar = variableArray?.find((v) => v.Name === targetName);
+
+        if (foundVar) {
+          // console.log(`DEBUG: Found value for ${variablePath}:`, foundVar.Value);
+          return foundVar.Value ?? 'N/A';
+        }
+      }
+    }
+
+    // console.log(`DEBUG: Value not found for ${variablePath}`);
+    return 'N/A'; // Not found
   };
 
   // Function to get latest timestamp for a variable
   const getLatestTimestamp = (variablePath: string): string | undefined => {
-    const actualKey = findWsVariableKey(variablePath);
-    const latestUpdateArray = actualKey ? wsVariables[actualKey] : undefined;
-    const timestamp = latestUpdateArray?.[0]?.Timestamp;
-    return timestamp;
+    // variablePath is like "namespace.VariableName" e.g., "main-st.Counter"
+    const parts = variablePath.split('.');
+    if (parts.length < 2) return undefined; // Invalid format
+
+    const namespace = parts[0];
+    const targetName = parts.slice(1).join('.'); // Handle names with dots
+
+    // console.log(`DEBUG: getLatestTimestamp searching for ns=${namespace}, name=${targetName}`);
+
+    for (const wsKey in wsVariables) {
+      // wsKey is like "controllerId:filePath" e.g., "default:main-st"
+      const keyParts = wsKey.split(':');
+      if (keyParts.length < 2) continue; // Skip invalid keys
+
+      const filePath = keyParts[1];
+
+      if (filePath === namespace) {
+        const variableArray = wsVariables[wsKey];
+        // variableArray is Variable[] = [{ Name: string, Value: any, Timestamp: string, ... }]
+        const foundVar = variableArray?.find((v) => v.Name === targetName);
+
+        if (foundVar) {
+          // console.log(`DEBUG: Found timestamp for ${variablePath}:`, foundVar.Timestamp);
+          return foundVar.Timestamp;
+        }
+      }
+    }
+    // console.log(`DEBUG: Timestamp not found for ${variablePath}`);
+    return undefined; // Not found
   };
 
   // Function to calculate Min/Max from history
@@ -505,7 +787,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
     typedHistoryData.forEach((entry: HistoryEntry) => {
       const valueStr = entry[variablePath];
       if (valueStr !== undefined && valueStr !== null) {
-        const value = parseFloat(valueStr);
+        const value = parseFloat(String(valueStr));
         if (!isNaN(value)) {
           hasNumeric = true;
           if (value < min) min = value;
@@ -516,6 +798,73 @@ export default function TrendsTab({ file }: TrendsTabProps) {
     const result = hasNumeric ? { min, max } : { min: 'N/A', max: 'N/A' };
     return result;
   };
+
+  // Helper to toggle struct expansion
+  const toggleStructExpansion = (structPath: string) => {
+    setExpandedStructs((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(structPath)) {
+        newSet.delete(structPath);
+      } else {
+        newSet.add(structPath);
+      }
+      return newSet;
+    });
+  };
+
+  // Process availableVariables to identify top-level items and structs
+  const tableItems = useMemo(() => {
+    const topLevelPaths = new Set<string>();
+    const structPaths = new Set<string>();
+    const memberMap = new Map<string, string[]>(); // structPath -> memberPaths[]
+
+    // First pass: identify potential structs and members
+    availableVariables.forEach((path) => {
+      const parts = path.split('.');
+      if (parts.length > 2) {
+        // Potential member like namespace.Struct.Member
+        const potentialStructPath = parts.slice(0, -1).join('.');
+        structPaths.add(potentialStructPath);
+        if (!memberMap.has(potentialStructPath)) {
+          memberMap.set(potentialStructPath, []);
+        }
+        memberMap.get(potentialStructPath)?.push(path);
+      } else if (parts.length === 2) {
+        // Potential top-level simple var or struct root like namespace.Variable
+        topLevelPaths.add(path);
+      }
+    });
+
+    // Second pass: Confirm top-level items
+    // Remove items from topLevelPaths if they are actually members identified in pass 1
+    memberMap.forEach((members) => {
+      members.forEach((memberPath) => {
+        topLevelPaths.delete(memberPath); // Ensure members aren't treated as top-level
+      });
+    });
+
+    // Ensure struct roots identified via members are added to topLevelPaths
+    structPaths.forEach((structPath) => {
+      topLevelPaths.add(structPath);
+    });
+
+    // Sort top-level paths alphabetically
+    const sortedTopLevel = Array.from(topLevelPaths).sort();
+
+    return {
+      sortedTopLevel,
+      structPaths,
+      memberMap,
+    };
+  }, [availableVariables]);
+
+  // Add effect to monitor compile status changes
+  useEffect(() => {
+    if (compileStatus === 'compiling') {
+      setStatus('waiting');
+      setErrorMessage(null);
+    }
+  }, [compileStatus]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-115px)] p-4 space-y-4">
@@ -548,11 +897,16 @@ export default function TrendsTab({ file }: TrendsTabProps) {
 
       {/* Chart Section */}
       <div className="flex-1 w-full h-[60%] min-h-[400px]">
-        {' '}
-        {/* Adjust height as needed */}
-        {loading ? (
-          <div className="flex items-center justify-center h-full">
-            Loading chart data...
+        {status === 'waiting' ||
+        status === 'processing' ||
+        status === 'error' ? (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            {status === 'waiting' &&
+              (compileStatus === 'compiling'
+                ? 'Compiling code...'
+                : 'Analyzing variables...')}
+            {status === 'processing' && 'Processing compiled code...'}
+            {status === 'error' && `Error: ${errorMessage}`}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -560,7 +914,8 @@ export default function TrendsTab({ file }: TrendsTabProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="time" tickFormatter={formatTimestamp} />
               <YAxis />
-              <Tooltip />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
               {selectedVariables.map((variable, index) => (
                 <Line
                   key={variable}
@@ -569,6 +924,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
                   stroke={COLORS[index % COLORS.length]}
                   dot={false}
                   isAnimationActive={!autoRefresh}
+                  name={variable.split('.').pop()}
                 />
               ))}
             </LineChart>
@@ -592,76 +948,179 @@ export default function TrendsTab({ file }: TrendsTabProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {availableVariables.length === 0 && (
+            {status === 'waiting' && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center">
-                  No variables available or detected.
+                <TableCell
+                  colSpan={8}
+                  className="text-center text-muted-foreground"
+                >
+                  {compileStatus === 'compiling'
+                    ? 'Compiling code...'
+                    : 'Analyzing variables...'}
                 </TableCell>
               </TableRow>
             )}
-            {availableVariables.map((variablePath) => {
-              const { min, max } = getMinMax(variablePath);
-              const variableName =
-                variablePath.split('.').pop() || variablePath;
-              const isSelected = selectedVariables.includes(variablePath);
-              const latestValue = getLatestValue(variablePath);
-              const latestTimestamp = getLatestTimestamp(variablePath);
+            {status === 'processing' && (
+              <TableRow>
+                <TableCell
+                  colSpan={8}
+                  className="text-center text-muted-foreground"
+                >
+                  Processing compiled code...
+                </TableCell>
+              </TableRow>
+            )}
+            {status === 'error' && (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-red-500">
+                  Error: {errorMessage || 'Failed to load variables.'}
+                </TableCell>
+              </TableRow>
+            )}
+            {status === 'success' && availableVariables.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center">
+                  No variables found in the compiled code for '{file.name}'.
+                </TableCell>
+              </TableRow>
+            )}
+            {/* Only render variable rows if status is success and vars exist */}
+            {status === 'success' &&
+              availableVariables.length > 0 &&
+              tableItems.sortedTopLevel.map((path) => {
+                const isStruct = tableItems.structPaths.has(path);
+                const isExpanded = expandedStructs.has(path);
+                const members = tableItems.memberMap.get(path) || [];
+                const variableName = path.split('.').pop() || path;
 
-              // Find color if selected
-              const selectedIndex = selectedVariables.indexOf(variablePath);
-              const color = isSelected
-                ? COLORS[selectedIndex % COLORS.length]
-                : undefined;
+                const parentRow = (
+                  <TableRow key={path}>
+                    <TableCell className="w-[60px]">
+                      {isStruct ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleStructExpansion(path)}
+                          className="px-1"
+                          aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </Button>
+                      ) : (
+                        <Checkbox
+                          checked={selectedVariables.includes(path)}
+                          onCheckedChange={() => handleVariableToggle(path)}
+                          id={`select-${path}`}
+                          aria-label={`Select ${variableName}`}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell className="w-[40px]">
+                      {!isStruct && selectedVariables.includes(path) && (
+                        <div
+                          className="w-4 h-4 rounded-sm"
+                          style={{
+                            backgroundColor:
+                              COLORS[
+                                selectedVariables.indexOf(path) % COLORS.length
+                              ],
+                          }}
+                          title={`Color: ${
+                            COLORS[
+                              selectedVariables.indexOf(path) % COLORS.length
+                            ]
+                          }`}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell>{variableName}</TableCell>
+                    <TableCell className="font-mono text-xs">{path}</TableCell>
+                    <TableCell>
+                      {formatTimestamp(getLatestTimestamp(path))}
+                    </TableCell>
+                    <TableCell>
+                      {String(getLatestValue(path) ?? 'N/A')}
+                    </TableCell>
+                    <TableCell>{String(getMinMax(path).min)}</TableCell>
+                    <TableCell>{String(getMinMax(path).max)}</TableCell>
+                  </TableRow>
+                );
 
-              return (
-                <TableRow key={variablePath}>
-                  <TableCell>
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => handleVariableToggle(variablePath)}
-                      id={`select-${variablePath}`}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {color && (
-                      <div
-                        className="w-4 h-4 rounded-sm"
-                        style={{ backgroundColor: color }}
-                        title={`Color: ${color}`}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell>{variableName}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {variablePath}
-                  </TableCell>
-                  <TableCell>{formatTimestamp(latestTimestamp)}</TableCell>
-                  <TableCell>{latestValue}</TableCell>
-                  <TableCell>{min}</TableCell>
-                  <TableCell>{max}</TableCell>
-                </TableRow>
-              );
-            })}
-            {/* Optional: Add row for manually adding variables */}
-            {/* <TableRow>
-              <TableCell colSpan={6}>
-                <Input
-                  placeholder="Enter variable path (e.g., main-st.MyVar)"
-                  value={manualVariable}
-                  onChange={(e) => setManualVariable(e.target.value)}
-                />
-              </TableCell>
-              <TableCell>
-                <Button size="sm" onClick={handleAddVariable} disabled={!manualVariable.trim()}>
-                  Add
-                </Button>
-              </TableCell>
-            </TableRow> */}
+                const memberRows =
+                  isStruct && isExpanded
+                    ? members.sort().map((memberPath) => {
+                        const memberName =
+                          memberPath.split('.').pop() || memberPath;
+                        const isMemberSelected =
+                          selectedVariables.includes(memberPath);
+                        const memberValue = getLatestValue(memberPath);
+                        const memberTimestamp = getLatestTimestamp(memberPath);
+                        const { min: memberMin, max: memberMax } =
+                          getMinMax(memberPath);
+
+                        return (
+                          <TableRow key={memberPath}>
+                            <TableCell className="pl-8 w-[60px]">
+                              <Checkbox
+                                checked={isMemberSelected}
+                                onCheckedChange={() =>
+                                  handleVariableToggle(memberPath)
+                                }
+                                id={`select-${memberPath}`}
+                                aria-label={`Select ${memberName}`}
+                              />
+                            </TableCell>
+                            <TableCell className="w-[40px]">
+                              {selectedVariables.includes(memberPath) && (
+                                <div
+                                  className="w-4 h-4 rounded-sm"
+                                  style={{
+                                    backgroundColor:
+                                      COLORS[
+                                        selectedVariables.indexOf(memberPath) %
+                                          COLORS.length
+                                      ],
+                                  }}
+                                  title={`Color: ${
+                                    COLORS[
+                                      selectedVariables.indexOf(memberPath) %
+                                        COLORS.length
+                                    ]
+                                  }`}
+                                />
+                              )}
+                            </TableCell>
+                            <TableCell className="pl-8">{memberName}</TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {memberPath}
+                            </TableCell>
+                            <TableCell>
+                              {formatTimestamp(memberTimestamp)}
+                            </TableCell>
+                            <TableCell>
+                              {String(memberValue ?? 'N/A')}
+                            </TableCell>
+                            <TableCell>{String(memberMin)}</TableCell>
+                            <TableCell>{String(memberMax)}</TableCell>
+                          </TableRow>
+                        );
+                      })
+                    : null;
+
+                return (
+                  <Fragment key={path}>
+                    {parentRow}
+                    {memberRows}
+                  </Fragment>
+                );
+              })}
           </TableBody>
         </Table>
       </div>
-
-      {/* Remove the old Card-based variable selection if it existed */}
     </div>
   );
 }

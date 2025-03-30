@@ -34,7 +34,7 @@ import EditorTab, { TabType } from './EditorTab'; // Import EditorTab component
 import NewFileDialog from './NewFileDialog';
 import ProjectSidebar from './ProjectSidebar/ProjectSidebar';
 import StatusScreen from './StatusScreen';
-import TrendsTab from './TrendsTab';
+import { TrendsTab } from './TrendsTab';
 import { FileNode } from './types';
 
 // Custom error boundary for the editor
