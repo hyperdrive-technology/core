@@ -64,7 +64,7 @@ function RootDocument() {
         <ThemeProvider defaultTheme="light" storageKey="hyperdrive-ui-theme">
           <WebSocketProvider>
             <Outlet />
-            <Toaster position="top-right" richColors closeButton />
+            <Toaster position="bottom-right" richColors closeButton />
           </WebSocketProvider>
         </ThemeProvider>
         <Scripts />

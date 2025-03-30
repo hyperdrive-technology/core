@@ -228,7 +228,7 @@ export default function Dashboard() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col">
+        <div className="flex flex-col h-full">
           <div className="flex-grow">
             <MonacoEditor
               initialFiles={projectFiles.length > 0 ? projectFiles : undefined}

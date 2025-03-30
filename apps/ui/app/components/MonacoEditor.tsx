@@ -23,9 +23,14 @@ import {
 } from '../workers/lsp/language-service';
 import BreadcrumbPath from './BreadcrumbPath';
 import { CommandBar } from './CommandBar';
-import { CompilePanel } from './CompilePanel';
+import {
+  CompilationOutputPanel,
+  CompileResult, // Import the type definition
+  Diagnostic, // Import the type definition
+  FileDiagnostic, // Import the type definition
+} from './CompilePanel';
 import { useWebSocket } from './context/WebSocketContext';
-import { TabType } from './EditorTab';
+import EditorTab, { TabType } from './EditorTab'; // Import EditorTab component
 import NewFileDialog from './NewFileDialog';
 import ProjectSidebar from './ProjectSidebar/ProjectSidebar';
 import StatusScreen from './StatusScreen';
@@ -128,10 +133,16 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
   const [isDeploying, setIsDeploying] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
-  const [compilationResult, setCompilationResult] = useState<{
-    success: boolean;
-    error?: string;
-  } | null>(null);
+  // Remove old simple compilationResult state
+  // const [compilationResult, setCompilationResult] = useState<{
+  //   success: boolean;
+  //   error?: string;
+  // } | null>(null);
+
+  // Add new state for detailed compilation results and logs
+  const [latestCompilationResult, setLatestCompilationResult] =
+    useState<CompileResult | null>(null);
+  const [compilationLogs, setCompilationLogs] = useState<string[]>([]);
 
   // Add a state for tracking the current project/folder
   // Use provided projectName from props if available, otherwise default
@@ -140,11 +151,17 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   );
 
   // IEC Compiler hook - moved to top of component
+  // Explicitly type the result from the hook
   const {
     compile,
     result: compilerResult,
     status: compilerStatus,
     error: compilerError,
+  }: {
+    compile: (files: IECFile[]) => void;
+    result: CompileResult | null;
+    status: string;
+    error: string | null;
   } = useIECCompiler();
 
   // Log compiler initialization
@@ -161,10 +178,16 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       } catch (err) {
         console.error('Error calling compile function:', err);
         setIsCompiling(false);
-        setCompilationResult({
+        setLatestCompilationResult({
           success: false,
           error: err instanceof Error ? err.message : String(err),
         });
+        setCompilationLogs((prev) => [
+          ...prev,
+          `❌ Error initiating compilation: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        ]);
       }
     },
     [compile]
@@ -1809,8 +1832,11 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     }
 
     setIsCompiling(true);
-    setCompilationResult(null);
-    // Reset the hasChangesSinceCompilation flag when compilation starts
+    // Clear previous results and logs when starting a new compile
+    setLatestCompilationResult(null);
+    setCompilationLogs([
+      `Starting compilation of ${stFiles.length} file(s)...`,
+    ]);
     setHasChangesSinceCompilation(false);
 
     // Removed toast.info notification for compiling
@@ -1834,7 +1860,12 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       console.error('Compilation error:', error);
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      setCompilationResult({ success: false, error: errorMessage });
+      // Update state directly here too
+      setLatestCompilationResult({ success: false, error: errorMessage });
+      setCompilationLogs((prev) => [
+        ...prev,
+        `❌ Error during compilation: ${errorMessage}`,
+      ]);
       toast.error('Compilation failed', {
         description: errorMessage,
       });
@@ -1855,37 +1886,93 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
   // Add a useEffect to handle compilation results
   useEffect(() => {
-    // Only run this effect if we have status information from the compiler
     if (compilerStatus === 'success' || compilerStatus === 'error') {
-      console.log('📋 Compiler status changed:', compilerStatus);
-      console.log('📋 Compiler result:', compilerResult);
-      console.log('📋 Compiler error:', compilerError);
+      console.log('🔄 MonacoEditor: Compiler status changed:', compilerStatus);
+      console.log('🔄 MonacoEditor: Compiler result:', compilerResult);
+      console.log('🔄 MonacoEditor: Compiler error:', compilerError);
 
       setIsCompiling(false);
+      // Simplify finalResult construction
+      let finalResult: CompileResult | null = null;
+      if (compilerResult) {
+        // Use non-null assertion here
+        const nonNullResult: CompileResult = compilerResult!;
+        finalResult = {
+          ...nonNullResult,
+          error: compilerError || nonNullResult.error, // Use the non-null constant
+        };
+      } else if (compilerError) {
+        finalResult = { success: false, error: compilerError };
+      }
+      setLatestCompilationResult(finalResult);
 
-      if (compilerStatus === 'success' && compilerResult?.success) {
-        setCompilationResult({ success: true });
-        // Store the result AST for later deployment
-        if (compilerResult.ast) {
-          console.log('📋 Compilation succeeded with AST:', compilerResult.ast);
-        }
+      // Generate logs based on the finalResult
+      let newLogs: string[] = [];
 
+      if (compilerStatus === 'success' && finalResult?.success) {
+        newLogs.push(
+          `✅ Compilation successful for ${finalResult.fileCount || 0} file(s)`
+        );
+        // Add log before toast
+        console.log('🔔 Triggering compilation success toast...');
         toast.success('Compilation successful', {
-          description: `Successfully compiled ${compilerResult.fileCount} file(s)`,
+          description: `Successfully compiled ${
+            finalResult.fileCount || 0 // Use finalResult here
+          } file(s)`,
         });
       } else {
-        setCompilationResult({
-          success: false,
-          error: compilerError || 'Compilation failed with errors',
-        });
-
+        const errorMsg =
+          compilerError || compilerResult?.error || 'Unknown error';
+        newLogs.push(`❌ Compilation failed: ${errorMsg}`);
         toast.error('Compilation failed', {
-          description: compilerError || 'Check the compile panel for details',
+          description: errorMsg,
         });
       }
+
+      // Add logs about diagnostics
+      if (compilerResult?.diagnostics) {
+        newLogs.push(''); // Add spacing
+        newLogs.push('📋 Diagnostics:');
+        compilerResult.diagnostics.forEach((fileDiag: FileDiagnostic) => {
+          newLogs.push(`  File: ${fileDiag.fileName}`);
+          if (fileDiag.diagnostics.length === 0) {
+            newLogs.push(`    No issues found`);
+          } else {
+            fileDiag.diagnostics.forEach((diag: Diagnostic) => {
+              const prefix = diag.severity === 'error' ? '❌' : '⚠️';
+              newLogs.push(
+                `    ${prefix} Line ${diag.line}, Col ${diag.column}: ${diag.message}`
+              );
+            });
+          }
+        });
+      }
+
+      // Log info about the AST if available and successful
+      if (finalResult?.success && finalResult?.ast) {
+        // Log the actual AST object to the console for inspection
+        console.log('🔍 MonacoEditor: Received AST Object:', finalResult.ast);
+
+        newLogs.push(''); // Add spacing
+        newLogs.push('🏗️ AST Structure:');
+        const astLines = formatASTForDisplay(finalResult.ast); // Use the helper function
+        astLines.forEach((line: string) => newLogs.push(`  ${line}`)); // Add type to line
+
+        // Optionally add JSON representation (can be very verbose)
+        // newLogs.push('');
+        // newLogs.push('🔍 AST as JSON:');
+        // try {
+        //   const jsonStr = JSON.stringify(compilerResult.ast, null, 2);
+        //   const jsonLines = jsonStr.split('\n');
+        //   jsonLines.forEach((line) => newLogs.push(`  ${line}`));
+        // } catch (error) {
+        //   newLogs.push(`  Error formatting AST as JSON: ${error}`);
+        // }
+      }
+
+      setCompilationLogs(newLogs);
     }
-    // This effect was removed and replaced with the one at the top of the component
-  }, []);
+  }, [compilerStatus, compilerResult, compilerError]);
 
   // Deploy function that compiles first if there are changes
   const handleDeploy = useCallback(async () => {
@@ -1898,8 +1985,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     }
 
     // Check if we already have a valid compilation and the code hasn't changed since then
-    if (compilationResult?.success && !hasChangesSinceCompilation) {
-      console.log('Using existing compilation', compilationResult);
+    if (latestCompilationResult?.success && !hasChangesSinceCompilation) {
+      console.log('Using existing compilation', latestCompilationResult);
       // No need to compile again, continue with deployment
     }
 
@@ -1942,7 +2029,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       });
     }
     // If we don't have a successful compilation result yet, compile now
-    else if (!compilationResult?.success) {
+    else if (!latestCompilationResult?.success) {
       // Removed toast.info for compiling before deployment
 
       // Start compilation
@@ -1978,8 +2065,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       });
     }
 
-    // Now deploy the compiled code if we have an AST
-    if (compilerResult?.ast) {
+    // Now deploy the compiled code if we have an AST from the latest result
+    if (latestCompilationResult?.ast && latestCompilationResult?.success) {
       setIsDeploying(true);
 
       try {
@@ -2012,8 +2099,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            ast: compilerResult.ast,
-            sourceCode: compilerResult.sourceCode || '',
+            ast: latestCompilationResult.ast, // Use AST from state
+            sourceCode: latestCompilationResult.sourceCode || '', // Use sourceCode from state
             filePath: filePath,
           }),
         });
@@ -2046,7 +2133,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   }, [
     handleCompile,
     hasChangesSinceCompilation,
-    compilationResult,
+    latestCompilationResult, // use new state
     compilerResult,
     compilerStatus,
     compilerError,
@@ -2236,34 +2323,84 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     return isCompiling;
   }, [isCompiling]);
 
-  // This effect sets up initial watch on the compiler status and runs once
-  useEffect(() => {
-    if (
-      compilerStatus &&
-      (compilerStatus === 'success' || compilerStatus === 'error')
-    ) {
-      console.log('🔄 Compiler status updated:', compilerStatus);
-      setIsCompiling(false);
+  // Function to open or focus the compilation results tab
+  const handleShowCompilationResults = () => {
+    const compileTabId = 'compilation-output';
 
-      if (compilerStatus === 'success' && compilerResult?.success) {
-        toast.success('Compilation successful');
-      } else if (compilerStatus === 'error') {
-        toast.error('Compilation failed');
-      }
+    // Check if tab is already open
+    const existingTab = openFiles.find((file) => file.id === compileTabId);
+
+    if (existingTab) {
+      setActiveFileId(compileTabId);
+    } else {
+      // Create a new node for the compilation tab
+      const compileTabNode: FileNode = {
+        id: compileTabId,
+        name: 'Compilation Output', // Use a generic name
+        isFolder: false,
+        nodeType: 'compile', // Use the new type
+        content: '', // No actual file content
+      };
+      setOpenFiles((prev) => [...prev, compileTabNode]);
+      setActiveFileId(compileTabId);
+      // Add to history? Maybe not necessary for this non-file tab.
+      // addToHistory(compileTabId);
     }
-  }, [compilerStatus, compilerResult]);
+  };
+
+  // Add a helper function to format the AST for display (defined at component scope)
+  const formatASTForDisplay = (ast: any): string[] => {
+    if (!ast) return ['No AST data available'];
+
+    // Check for $type first, then type/kind, then fallback
+    const astType = ast.$type || ast.type || ast.kind || 'Unknown Type';
+    const lines: string[] = [`AST Root Type: ${astType}`];
+
+    // Add program declarations
+    if (ast.programs && ast.programs.length > 0) {
+      lines.push(`Programs (${ast.programs.length}):`);
+      // Simplify log: just show name, as type seems unavailable/undefined
+      ast.programs.forEach((prog: any) => {
+        lines.push(`  - ${prog.name}`);
+      });
+    }
+
+    // Add function block declarations
+    if (ast.functionBlocks && ast.functionBlocks.length > 0) {
+      lines.push(`Function Blocks (${ast.functionBlocks.length}):`);
+      // Simplify log: just show name
+      ast.functionBlocks.forEach((fb: any) => {
+        lines.push(`  - ${fb.name}`);
+      });
+    }
+
+    // Add function declarations
+    if (ast.functions && ast.functions.length > 0) {
+      lines.push(`Functions (${ast.functions.length}):`);
+      // Simplify log: just show name
+      ast.functions.forEach((func: any) => {
+        lines.push(`  - ${func.name}`);
+      });
+    }
+
+    return lines;
+  };
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col h-full">
       <CommandBar
         projectName={currentProjectName}
         onDeploy={handleDeploy}
-        onCompile={handleCompile}
+        onCompile={handleCompile} // Keep this for starting compilation
+        onShowCompileResults={handleShowCompilationResults} // Add new handler
+        hasCompilationResult={!!latestCompilationResult} // Pass flag indicating results exist
+        isSuccessfullyCompiled={!!latestCompilationResult?.success} // Pass success status
         hasChangesSinceCompilation={hasChangesSinceCompilation}
         isDeploying={isDeploying}
         isCompiling={isCompiling}
-        isCompileDisabled={isCompileDisabled()}
-        isDeployDisabled={isDeploying || isCompileDisabled()}
+        isCompileDisabled={isCompileDisabled()} // Existing check for compilable files
+        isDeployDisabled={isDeploying || isCompileDisabled()} // Keep existing file check for now, we'll refine in CommandBar
+        isConnected={isConnected} // Pass connection status
       />
       <div className="h-full flex">
         <Resizable
@@ -2309,22 +2446,15 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
               </Button>
             </div>
             {openFiles.map((file) => (
-              <LocalEditorTab
+              <EditorTab // Use imported EditorTab component
                 key={file.id}
                 file={file}
                 isActive={file.id === activeFileId}
                 onClick={() => handleTabClick(file.id)}
                 onClose={() => handleTabClose(file.id)}
                 hasUnsavedChanges={unsavedFileIds.has(file.id)}
-                tabType={
-                  file.nodeType === 'trends'
-                    ? 'trends'
-                    : file.nodeType === 'status'
-                    ? 'status'
-                    : file.nodeType === 'controller'
-                    ? 'file'
-                    : 'file'
-                }
+                // Determine tab type based on nodeType
+                tabType={file.nodeType as TabType} // Cast nodeType to TabType
               />
             ))}
           </div>
@@ -2353,15 +2483,20 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
             />
           )}
 
-          <div className="flex-1 h-full">
+          <div className="flex-1 h-full ">
             {activeFile?.nodeType === 'trends' ? (
               <TrendsTab file={activeFile} />
             ) : activeFile?.nodeType === 'status' ? (
               <StatusScreen file={activeFile} />
-            ) : (
+            ) : activeFile?.nodeType === 'compile' ? (
+              <CompilationOutputPanel
+                logs={compilationLogs}
+                result={latestCompilationResult}
+              />
+            ) : activeFile ? (
               <EditorErrorBoundary>
                 <Editor
-                  height="50vh"
+                  height="100%" // Changed height to fill space
                   defaultLanguage="plaintext"
                   theme={monacoTheme}
                   onMount={handleEditorDidMount}
@@ -2373,12 +2508,12 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
                   }}
                 />
               </EditorErrorBoundary>
+            ) : (
+              // Placeholder for when no file is open
+              <div className="flex items-center justify-center h-full text-gray-500">
+                Select a file to view or edit.
+              </div>
             )}
-          </div>
-
-          {/* Add CompilePanel component */}
-          <div className="p-4 border-t bg-background h-[36vh] overflow-scroll">
-            <CompilePanel files={iecFiles} />
           </div>
         </div>
       </div>

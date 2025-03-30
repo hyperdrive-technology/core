@@ -1,5 +1,6 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -682,50 +683,45 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   // No need for initial connection anymore since we'll connect to controllers explicitly
   // with the connect() method when added or when the user clicks the connect button
 
-  // Subscribe to specific variables
-  const subscribeToVariables = (variableNames: string[], filePath: string) => {
-    if (!isConnected || controllers.length === 0) {
-      console.log('Cannot subscribe to variables: no active connections');
-      toast.error('Cannot subscribe to variables: no active connections');
-      return;
-    }
+  // Wrap subscribeToVariables in useCallback
+  const subscribeToVariables = useCallback(
+    (variableNames: string[], filePath: string) => {
+      console.log(
+        `Subscribing to variables: ${variableNames.join(', ')} from ${filePath}`
+      );
 
-    // Log the subscription request
-    console.log(
-      `Subscribing to variables: ${variableNames.join(', ')} from ${filePath}`
-    );
+      // Add to the global set of subscribed variables
+      setSubscribedVariables((prev) => {
+        const newSet = new Set(prev);
+        variableNames.forEach((name) => newSet.add(name));
+        return newSet;
+      });
 
-    // Track subscribed variables
-    const newSubscribedVars = new Set(subscribedVariables);
-    variableNames.forEach((v) => newSubscribedVars.add(v));
-    setSubscribedVariables(newSubscribedVars);
-
-    // Send subscription requests to all connected controllers
-    controllers.forEach((controller) => {
-      if (controller.isConnected && controller.connection) {
-        try {
-          // Send subscription message
-          const subscriptionMsg = {
-            type: 'subscribe',
-            variables: variableNames,
-            path: filePath,
-          };
-
-          controller.connection.send(JSON.stringify(subscriptionMsg));
-          console.log(
-            `Sent subscription request to ${controller.name}`,
-            subscriptionMsg
-          );
-        } catch (error) {
-          console.error(
-            `Failed to send subscription to ${controller.name}:`,
-            error
-          );
-          toast.error(`Failed to subscribe to variables on ${controller.name}`);
+      // Send subscription message to each connected controller
+      controllers.forEach((controller) => {
+        if (controller.isConnected && controller.connection) {
+          try {
+            const message = {
+              type: 'subscribe',
+              variables: variableNames,
+              path: filePath, // Send the path for context
+            };
+            controller.connection.send(JSON.stringify(message));
+            console.log(
+              `Sent subscription request to ${controller.name}`,
+              message
+            );
+          } catch (err) {
+            console.error(
+              `Failed to send subscription to ${controller.name}:`,
+              err
+            );
+          }
         }
-      }
-    });
-  };
+      });
+    },
+    [controllers] // Dependency: only recreate if controllers array changes
+  );
 
   // Check if a controller is currently connecting
   const isControllerConnecting = (controllerId: string) => {
@@ -733,34 +729,35 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     return isConnecting;
   };
 
-  // Set trend tab open
-  const setTrendTabOpen = (isOpen: boolean) => {
+  // Update hasTrendTabsOpen flag
+  const setTrendTabOpen = useCallback((isOpen: boolean) => {
     hasTrendTabsOpen.current = isOpen;
+    console.log(`Trend tab open status: ${isOpen}`);
+  }, []);
+
+  const contextValue = {
+    variables,
+    status,
+    historyData,
+    isConnected,
+    error,
+    selectedVariable,
+    controllers,
+    connectingControllers,
+    setSelectedVariable,
+    connect,
+    disconnect,
+    connectAll,
+    disconnectAll,
+    addController,
+    getControllerStatus,
+    isControllerConnecting,
+    subscribeToVariables, // Use the memoized function
+    setTrendTabOpen,
   };
 
   return (
-    <WebSocketContext.Provider
-      value={{
-        variables,
-        status,
-        historyData,
-        isConnected,
-        error,
-        selectedVariable,
-        controllers,
-        connectingControllers,
-        setSelectedVariable,
-        connect,
-        disconnect,
-        connectAll,
-        disconnectAll,
-        addController,
-        getControllerStatus,
-        isControllerConnecting,
-        subscribeToVariables,
-        setTrendTabOpen,
-      }}
-    >
+    <WebSocketContext.Provider value={contextValue}>
       {children}
     </WebSocketContext.Provider>
   );

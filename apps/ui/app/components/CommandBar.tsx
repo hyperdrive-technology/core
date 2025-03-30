@@ -7,6 +7,9 @@ export interface CommandBarProps {
   projectName: string;
   onCompile?: () => void;
   onDeploy?: () => void;
+  onShowCompileResults?: () => void;
+  hasCompilationResult?: boolean;
+  isSuccessfullyCompiled?: boolean;
   hasChangesSinceCompilation?: boolean;
   actions?: {
     onCompile?: () => void;
@@ -17,6 +20,7 @@ export interface CommandBarProps {
   isDeploying?: boolean;
   isCompileDisabled?: boolean;
   isDeployDisabled?: boolean;
+  isConnected?: boolean;
   lastCompiledAt?: string;
 }
 
@@ -24,6 +28,9 @@ export const CommandBar: React.FC<CommandBarProps> = ({
   projectName,
   onCompile,
   onDeploy,
+  onShowCompileResults,
+  hasCompilationResult,
+  isSuccessfullyCompiled,
   hasChangesSinceCompilation,
   actions,
   hasChanges = hasChangesSinceCompilation,
@@ -31,10 +38,10 @@ export const CommandBar: React.FC<CommandBarProps> = ({
   isDeploying,
   isCompileDisabled,
   isDeployDisabled,
+  isConnected,
   lastCompiledAt,
 }) => {
   const {
-    isConnected,
     controllers,
     connect: connectAll,
     disconnect: disconnectAll,
@@ -88,10 +95,19 @@ export const CommandBar: React.FC<CommandBarProps> = ({
 
   // Handle compile click with fallback
   const handleCompileClick = () => {
-    if (actions?.onCompile) {
-      actions.onCompile();
-    } else if (onCompile) {
-      onCompile();
+    // If there are changes since the last compilation, always recompile
+    if (hasChangesSinceCompilation) {
+      if (actions?.onCompile) actions.onCompile();
+      else if (onCompile) onCompile();
+    }
+    // If no changes and previous results exist, show results
+    else if (hasCompilationResult && !isCompiling && onShowCompileResults) {
+      onShowCompileResults();
+    }
+    // Otherwise (no changes, no results OR currently compiling), trigger compile
+    else {
+      if (actions?.onCompile) actions.onCompile();
+      else if (onCompile) onCompile();
     }
   };
 
@@ -131,24 +147,47 @@ export const CommandBar: React.FC<CommandBarProps> = ({
           onClick={handleCompileClick}
           disabled={isCompiling || isCompileDisabled}
           title={
-            isCompileDisabled
+            isCompiling
+              ? 'Compilation in progress...'
+              : isCompileDisabled
               ? 'No IEC-61131 (.st) files to compile'
-              : 'Compile all IEC-61131 files under Control (Ctrl+Shift+C)'
+              : hasChangesSinceCompilation
+              ? 'Compile changes (Ctrl+Shift+C)'
+              : hasCompilationResult
+              ? 'Show previous compilation results'
+              : 'Compile all IEC-61131 files (Ctrl+Shift+C)'
           }
           className="flex items-center"
         >
           <Code className="h-4 w-4 mr-1" />
-          {isCompiling ? 'Compiling...' : 'Compile All'}
+          {isCompiling
+            ? 'Compiling...'
+            : hasChangesSinceCompilation
+            ? 'Compile All'
+            : hasCompilationResult
+            ? 'Show Results'
+            : 'Compile All'}
         </Button>
         <Button
           variant="outline"
           size="sm"
           onClick={handleDeployClick}
-          disabled={isDeployDisabled || isDeploying}
+          disabled={
+            isDeploying ||
+            !isConnected ||
+            !isSuccessfullyCompiled ||
+            hasChangesSinceCompilation
+          }
           title={
-            isDeployDisabled
-              ? 'Only IEC-61131 (.st) files can be deployed'
-              : 'Deploy to Runtime (Ctrl+Shift+D)'
+            isDeploying
+              ? 'Deployment in progress...'
+              : !isConnected
+              ? 'Connect to controllers first to enable deploy'
+              : !isSuccessfullyCompiled
+              ? 'Project must be successfully compiled first'
+              : hasChangesSinceCompilation
+              ? 'Compile changes before deploying'
+              : 'Deploy compiled code to Runtime (Ctrl+Shift+D)'
           }
           className="flex items-center"
         >

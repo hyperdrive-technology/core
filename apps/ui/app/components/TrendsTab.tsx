@@ -1,12 +1,18 @@
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { Activity, Clock, Filter, RefreshCw } from 'lucide-react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -41,6 +47,9 @@ const extractVariablesFromST = (code: string): string[] => {
     const sectionContent = varSection[2];
     let varDecl;
 
+    // CRITICAL: Reset lastIndex for the inner regex before each use
+    varDeclRegex.lastIndex = 0;
+
     while ((varDecl = varDeclRegex.exec(sectionContent)) !== null) {
       if (varDecl[1] && !variables.includes(varDecl[1])) {
         variables.push(varDecl[1]);
@@ -48,7 +57,8 @@ const extractVariablesFromST = (code: string): string[] => {
     }
   }
 
-  // Also look for standalone variable declarations (outside VAR blocks)
+  // Comment out standalone variable check - less common in ST
+  /*
   const globalVarRegex =
     /\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(?::=.*?)?;/g;
   let globalVar;
@@ -57,6 +67,7 @@ const extractVariablesFromST = (code: string): string[] => {
       variables.push(globalVar[1]);
     }
   }
+  */
 
   return variables;
 };
@@ -137,11 +148,27 @@ const COLORS = [
   '#00C49F',
 ];
 
+// Helper to format timestamp
+const formatTimestamp = (timestamp: number | string | undefined) => {
+  if (!timestamp) return 'N/A';
+  try {
+    return new Date(timestamp).toLocaleTimeString();
+  } catch {
+    return 'Invalid Date';
+  }
+};
+
+// Type for historical data entries (assuming structure)
+interface HistoryEntry {
+  time: number | string; // Allow string initially from data
+  [variablePath: string]: any; // Variable values keyed by path
+}
+
 export default function TrendsTab({ file }: TrendsTabProps) {
   const {
     isConnected,
-    variables: wsVariables,
-    historyData,
+    variables: wsVariables, // This is VariableMap: { [path: string]: Variable[] }
+    historyData, // This is any[], assumed to be HistoryEntry[]
     subscribeToVariables,
     setTrendTabOpen,
   } = useWebSocket();
@@ -164,66 +191,48 @@ export default function TrendsTab({ file }: TrendsTabProps) {
     };
   }, [setTrendTabOpen]);
 
-  // Initialize with some default variables based on file name
+  // Initialize with variables based on file name
   useEffect(() => {
-    // Set initial loading state
     setLoading(true);
-
-    // Get the file name without extension and path
     const fileName = getFileName(file.name);
-    // Default to main-st if we can't determine a namespace
     let namespace = 'main-st';
-
-    // If we have a specific file name, use it for the namespace
     if (fileName && fileName !== 'unknown' && fileName !== 'trends') {
       const baseName = fileName.replace('.st', '').replace('Trends: ', '');
       namespace = `${baseName}-st`;
     }
 
-    console.log(`Using namespace: ${namespace} for trends variables`);
-
-    // Fetch the actual ST code to extract variables
     const fetchSTCode = async () => {
+      let success = false; // Flag to track if we successfully set vars
       try {
-        // Try to fetch the source code from the controller
-        const filePath = namespace.replace('-st', ''); // Get original path without -st suffix
-        const response = await fetch(CONTROLLER_API.DOWNLOAD_AST(filePath));
+        const response = await fetch(CONTROLLER_API.DOWNLOAD_AST(namespace));
+
         if (response.ok) {
           const data = await response.json();
           if (data.sourceCode) {
-            // Extract variables from the source code
             const extractedVars = extractVariablesFromST(data.sourceCode);
-            console.log('Extracted variables from ST code:', extractedVars);
 
-            // Format variables with namespace
             const namespacedVars = extractedVars.map(
               (v) => `${namespace}.${v}`
             );
 
             if (namespacedVars.length > 0) {
               setAvailableVariables(namespacedVars);
-              // Select the first few variables by default
               setSelectedVariables(
                 namespacedVars.slice(0, Math.min(4, namespacedVars.length))
               );
-
-              // Subscribe to these variables
               if (isConnected) {
                 subscribeToVariables(namespacedVars, namespace);
-                console.log(
-                  `Subscribed to ST variables with namespace ${namespace}:`,
-                  namespacedVars
-                );
               }
-
-              setLoading(false);
-              return;
+              success = true; // Mark success
             }
           }
         }
+      } catch (error) {
+        console.error('TRENDS_INIT: Error during fetch/extraction:', error);
+      }
 
-        // If we couldn't get variables from source code, use fallback variables
-        console.log('Using fallback variables - no source code found');
+      // Fallback logic ONLY if extraction failed
+      if (!success) {
         const fallbackVars = [
           `${namespace}.Mode`,
           `${namespace}.Sensor1`,
@@ -232,25 +241,10 @@ export default function TrendsTab({ file }: TrendsTabProps) {
           `${namespace}.ManualOverride`,
           `${namespace}.TimeOfDay`,
         ];
-
         setAvailableVariables(fallbackVars);
-        setSelectedVariables(fallbackVars.slice(0, 2)); // Just select the first two
-
+        setSelectedVariables(fallbackVars.slice(0, 2));
         if (isConnected) {
           subscribeToVariables(fallbackVars, namespace);
-          console.log(
-            `Subscribed to fallback variables with namespace ${namespace}`
-          );
-        }
-      } catch (error) {
-        console.error('Error fetching ST code:', error);
-        // Use basic fallback if everything fails
-        const basicFallback = [`${namespace}.Mode`, `${namespace}.Sensor1`];
-        setAvailableVariables(basicFallback);
-        setSelectedVariables(basicFallback.slice(0, 1));
-
-        if (isConnected) {
-          subscribeToVariables(basicFallback, namespace);
         }
       }
 
@@ -258,9 +252,7 @@ export default function TrendsTab({ file }: TrendsTabProps) {
     };
 
     fetchSTCode();
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file.name]); // Only re-run if file name changes
+  }, [file.name, isConnected, subscribeToVariables]);
 
   // Get the file name without path
   const getFileName = (filename: string) => {
@@ -324,14 +316,13 @@ export default function TrendsTab({ file }: TrendsTabProps) {
     }
   };
 
-  // Generate trend data from history data from WebSocket
+  // Generate trend data from history - REMOVE DEBUG LOGS
   useEffect(() => {
     if (
       isConnected &&
       selectedVariables.length > 0 &&
       historyData?.length > 0
     ) {
-      // Calculate the time range in milliseconds
       const rangeInMinutes =
         timeRange === '1m'
           ? 1
@@ -340,40 +331,26 @@ export default function TrendsTab({ file }: TrendsTabProps) {
           : timeRange === '15m'
           ? 15
           : 60;
-
       const rangeMs = rangeInMinutes * 60 * 1000;
       const cutoffTime = new Date(Date.now() - rangeMs);
-
-      // Filter history data based on time range
       const filteredHistory = historyData.filter(
-        (point) => new Date(point.timestamp) > cutoffTime
+        (point: any) =>
+          point.timestamp && new Date(point.timestamp) > cutoffTime
       );
-
-      // Format the data for the chart
-      const formattedData = filteredHistory.map((entry) => {
-        const time = new Date(entry.timestamp).toLocaleTimeString();
+      const formattedData = filteredHistory.map((entry: HistoryEntry) => {
+        const time = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
         const dataPoint: Record<string, any> = { time };
-
         selectedVariables.forEach((varName) => {
-          // Check if this variable exists in the history entry
           if (entry[varName] !== undefined) {
-            // Handle time duration strings (e.g. "1.499788s")
             let value = entry[varName];
             if (typeof value === 'string' && value.endsWith('s')) {
-              // Remove the 's' suffix and convert to number
               value = parseFloat(value.slice(0, -1));
             }
-            // Ensure the value is a number for the chart
             const numValue = Number(value);
             if (!isNaN(numValue)) {
               dataPoint[varName] = numValue;
-            } else {
-              console.warn(
-                `Failed to convert value for ${varName}: ${value} (${typeof value})`
-              );
             }
           } else if (varName.includes('Timer.ET')) {
-            // Special check for Timer.ET - look for it in any format
             const timerKeys = Object.keys(entry).filter((k) =>
               k.includes('Timer.ET')
             );
@@ -389,14 +366,17 @@ export default function TrendsTab({ file }: TrendsTabProps) {
             }
           }
         });
-
         return dataPoint;
       });
-
       setTrendData(formattedData);
-      setLoading(false);
+      // Only set loading to false if we actually generated data
+      if (formattedData.length > 0) {
+        setLoading(false);
+      }
+    } else {
+      setTrendData([]);
     }
-  }, [historyData, selectedVariables, timeRange]); // Only re-run if these change
+  }, [historyData, selectedVariables, timeRange, isConnected]);
 
   // When WebSocket variables update, check if any match our subscriptions
   useEffect(() => {
@@ -486,125 +466,202 @@ export default function TrendsTab({ file }: TrendsTabProps) {
     setTimeout(() => setLoading(false), 500);
   };
 
+  // Helper to find the actual key in wsVariables matching the simple path suffix
+  const findWsVariableKey = (simplePath: string): string | undefined => {
+    const targetSuffix = `:${simplePath}`;
+    const foundKey = Object.keys(wsVariables).find((key) =>
+      key.includes(targetSuffix)
+    );
+    return foundKey;
+  };
+
+  // Function to get latest value for a variable
+  const getLatestValue = (variablePath: string): any => {
+    const actualKey = findWsVariableKey(variablePath);
+    const latestUpdateArray = actualKey ? wsVariables[actualKey] : undefined;
+    const value = latestUpdateArray?.[0]?.Value ?? 'N/A';
+    return value;
+  };
+
+  // Function to get latest timestamp for a variable
+  const getLatestTimestamp = (variablePath: string): string | undefined => {
+    const actualKey = findWsVariableKey(variablePath);
+    const latestUpdateArray = actualKey ? wsVariables[actualKey] : undefined;
+    const timestamp = latestUpdateArray?.[0]?.Timestamp;
+    return timestamp;
+  };
+
+  // Function to calculate Min/Max from history
+  const getMinMax = (
+    variablePath: string
+  ): { min: number | string; max: number | string } => {
+    const typedHistoryData = historyData as HistoryEntry[];
+    if (!typedHistoryData || typedHistoryData.length === 0) {
+      return { min: 'N/A', max: 'N/A' };
+    }
+    let min = Infinity;
+    let max = -Infinity;
+    let hasNumeric = false;
+    typedHistoryData.forEach((entry: HistoryEntry) => {
+      const valueStr = entry[variablePath];
+      if (valueStr !== undefined && valueStr !== null) {
+        const value = parseFloat(valueStr);
+        if (!isNaN(value)) {
+          hasNumeric = true;
+          if (value < min) min = value;
+          if (value > max) max = value;
+        }
+      }
+    });
+    const result = hasNumeric ? { min, max } : { min: 'N/A', max: 'N/A' };
+    return result;
+  };
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
-        <div className="flex items-center">
-          <Activity className="h-5 w-5 mr-2 text-blue-500" />
-          <h2 className="text-lg font-medium">Trends: {file.name}</h2>
-        </div>
+    <div className="flex flex-col h-[calc(100vh-115px)] p-4 space-y-4">
+      {/* Top Section: Controls - Keep this or integrate elsewhere if needed */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Trends: {file.name}</h2>
         <div className="flex items-center space-x-2">
-          <div className="flex items-center text-sm">
-            <Clock className="h-4 w-4 mr-1" />
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value as any)}
-              className="bg-transparent border border-gray-300 dark:border-gray-600 rounded px-2 py-1"
-            >
-              <option value="1m">Last 1 minute</option>
-              <option value="5m">Last 5 minutes</option>
-              <option value="15m">Last 15 minutes</option>
-              <option value="1h">Last hour</option>
-            </select>
-          </div>
-          <div className="flex items-center">
-            <Checkbox
-              checked={autoRefresh}
-              onCheckedChange={(checked) => setAutoRefresh(checked as boolean)}
-              id="autoRefresh"
-              className="mr-2"
-            />
-            <Label htmlFor="autoRefresh" className="text-sm flex items-center">
-              <RefreshCw className="h-3 w-3 mr-1" /> Auto-refresh
-            </Label>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
-            <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+          {/* Time Range Selector - Example */}
+          <Button variant="outline" size="sm">
+            Time: {timeRange}
           </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-12 h-full">
-        <div className="col-span-3 border-r dark:border-gray-700 p-4 overflow-y-auto">
-          <div className="flex items-center mb-3">
-            <Filter className="h-4 w-4 mr-2" />
-            <h3 className="text-sm font-medium">Variables</h3>
-          </div>
-
-          {/* Add variable input */}
-          <div className="flex mb-4">
-            <input
-              type="text"
-              value={manualVariable}
-              onChange={(e) => setManualVariable(e.target.value)}
-              placeholder="Enter variable path"
-              className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-l"
-              onKeyDown={(e) => e.key === 'Enter' && handleAddVariable()}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleRefresh}
+            disabled={loading || autoRefresh}
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="autoRefresh"
+              checked={autoRefresh}
+              onCheckedChange={(checked) => setAutoRefresh(!!checked)}
             />
-            <Button
-              size="sm"
-              className="rounded-l-none"
-              onClick={handleAddVariable}
-            >
-              Add
-            </Button>
+            <Label htmlFor="autoRefresh">Auto-refresh</Label>
           </div>
-
-          <div className="space-y-2">
-            {availableVariables.map((variable: string) => (
-              <div key={variable} className="flex items-center">
-                <Checkbox
-                  checked={selectedVariables.includes(variable)}
-                  onCheckedChange={() => handleVariableToggle(variable)}
-                  id={`var-${variable}`}
-                  className="mr-2"
-                />
-                <Label htmlFor={`var-${variable}`} className="text-sm">
-                  {variable}
-                </Label>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="col-span-9 p-4">
-          {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
-            </div>
-          ) : (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Variable Trends</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={400}>
-                  <LineChart
-                    data={trendData}
-                    margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    {selectedVariables.map((variable, index) => (
-                      <Line
-                        key={variable}
-                        type="monotone"
-                        dataKey={variable}
-                        stroke={COLORS[index % COLORS.length]}
-                        activeDot={{ r: 8 }}
-                        isAnimationActive={false}
-                      />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
+
+      {/* Chart Section */}
+      <div className="flex-1 w-full h-[60%] min-h-[400px]">
+        {' '}
+        {/* Adjust height as needed */}
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            Loading chart data...
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" tickFormatter={formatTimestamp} />
+              <YAxis />
+              <Tooltip />
+              {selectedVariables.map((variable, index) => (
+                <Line
+                  key={variable}
+                  type="monotone"
+                  dataKey={variable}
+                  stroke={COLORS[index % COLORS.length]}
+                  dot={false}
+                  isAnimationActive={!autoRefresh}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Variables Table Section */}
+      <div className="w-full overflow-auto border-t">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Select</TableHead>
+              <TableHead className="w-[40px]">Color</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Path</TableHead>
+              <TableHead>Last Timestamp</TableHead>
+              <TableHead>Value</TableHead>
+              <TableHead>Min</TableHead>
+              <TableHead>Max</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {availableVariables.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center">
+                  No variables available or detected.
+                </TableCell>
+              </TableRow>
+            )}
+            {availableVariables.map((variablePath) => {
+              const { min, max } = getMinMax(variablePath);
+              const variableName =
+                variablePath.split('.').pop() || variablePath;
+              const isSelected = selectedVariables.includes(variablePath);
+              const latestValue = getLatestValue(variablePath);
+              const latestTimestamp = getLatestTimestamp(variablePath);
+
+              // Find color if selected
+              const selectedIndex = selectedVariables.indexOf(variablePath);
+              const color = isSelected
+                ? COLORS[selectedIndex % COLORS.length]
+                : undefined;
+
+              return (
+                <TableRow key={variablePath}>
+                  <TableCell>
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => handleVariableToggle(variablePath)}
+                      id={`select-${variablePath}`}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    {color && (
+                      <div
+                        className="w-4 h-4 rounded-sm"
+                        style={{ backgroundColor: color }}
+                        title={`Color: ${color}`}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell>{variableName}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {variablePath}
+                  </TableCell>
+                  <TableCell>{formatTimestamp(latestTimestamp)}</TableCell>
+                  <TableCell>{latestValue}</TableCell>
+                  <TableCell>{min}</TableCell>
+                  <TableCell>{max}</TableCell>
+                </TableRow>
+              );
+            })}
+            {/* Optional: Add row for manually adding variables */}
+            {/* <TableRow>
+              <TableCell colSpan={6}>
+                <Input
+                  placeholder="Enter variable path (e.g., main-st.MyVar)"
+                  value={manualVariable}
+                  onChange={(e) => setManualVariable(e.target.value)}
+                />
+              </TableCell>
+              <TableCell>
+                <Button size="sm" onClick={handleAddVariable} disabled={!manualVariable.trim()}>
+                  Add
+                </Button>
+              </TableCell>
+            </TableRow> */}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Remove the old Card-based variable selection if it existed */}
     </div>
   );
 }
