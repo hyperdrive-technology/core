@@ -13,7 +13,6 @@ import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -427,16 +426,12 @@ export function TrendsTab({ file }: TrendsTabProps) {
           if (extractedVars.length > 0) {
             setAvailableVariables(extractedVars);
 
-            // Select the first few variables automatically (up to 4)
-            const initialSelectedVars = extractedVars.slice(
-              0,
-              Math.min(4, extractedVars.length)
-            );
-            setSelectedVariables(initialSelectedVars);
+            // Select ALL variables by default
+            setSelectedVariables(extractedVars);
 
             if (isConnected) {
               console.log(
-                `Subscribing to ${extractedVars.length} extracted variables from AST for ${namespace}.`
+                `Subscribing to ${extractedVars.length} selected variables from AST for ${namespace}.`
               );
               subscribeToVariables(extractedVars, namespace);
               setHasAttemptedSubscribe(true);
@@ -675,11 +670,19 @@ export function TrendsTab({ file }: TrendsTabProps) {
   }, [wsVariables]); // Only depend on wsVariables to avoid loops
 
   const handleVariableToggle = (variable: string) => {
-    setSelectedVariables((prev) =>
-      prev.includes(variable)
+    setSelectedVariables((prev) => {
+      const newSelected = prev.includes(variable)
         ? prev.filter((v) => v !== variable)
-        : [...prev, variable]
-    );
+        : [...prev, variable];
+
+      // Update subscriptions to match selected variables
+      if (isConnected && namespace) {
+        subscribeToVariables(newSelected, namespace);
+        console.log(`Updated subscriptions to ${newSelected.length} variables`);
+      }
+
+      return newSelected;
+    });
   };
 
   // Function to manually refresh subscriptions
@@ -706,71 +709,76 @@ export function TrendsTab({ file }: TrendsTabProps) {
     setTimeout(() => setLoading(false), 500);
   };
 
-  // Function to get latest value for a variable
+  // Updated getLatestValue function to ensure it's correctly retrieving values
   const getLatestValue = (variablePath: string): any => {
     // variablePath is like "namespace.VariableName" e.g., "main-st.Counter"
     const parts = variablePath.split('.');
     if (parts.length < 2) return 'N/A'; // Invalid format
 
     const namespace = parts[0];
-    const targetName = parts.slice(1).join('.'); // Handle names with dots like "MyStruct.Field1"
+    const varName = parts.slice(1).join('.'); // Handle variable names with dots
 
-    // console.log(`DEBUG: getLatestValue searching for ns=${namespace}, name=${targetName}`);
-
+    // Look for this variable in the websocket variables
     for (const wsKey in wsVariables) {
-      // wsKey is like "controllerId:filePath" e.g., "default:main-st"
-      const keyParts = wsKey.split(':');
-      if (keyParts.length < 2) continue; // Skip invalid keys
-
-      const filePath = keyParts[1];
-
-      if (filePath === namespace) {
+      // wsKey format is "controllerId:filePath"
+      if (wsKey.includes(`:${namespace}`)) {
         const variableArray = wsVariables[wsKey];
-        // variableArray is Variable[] = [{ Name: string, Value: any, Timestamp: string, ... }]
-        const foundVar = variableArray?.find((v) => v.Name === targetName);
+        // Look for exact match or match on just the variable name part
+        const foundVar = variableArray?.find(
+          (v) => v.Name === variablePath || v.Name === varName
+        );
 
         if (foundVar) {
-          // console.log(`DEBUG: Found value for ${variablePath}:`, foundVar.Value);
-          return foundVar.Value ?? 'N/A';
+          return foundVar.Value !== undefined ? foundVar.Value : 'N/A';
         }
       }
     }
 
-    // console.log(`DEBUG: Value not found for ${variablePath}`);
-    return 'N/A'; // Not found
+    // Also check history data for most recent value
+    if (historyData && historyData.length > 0) {
+      const latestEntry = historyData[historyData.length - 1];
+      if (latestEntry && latestEntry[variablePath] !== undefined) {
+        return latestEntry[variablePath];
+      }
+    }
+
+    return 'N/A';
   };
 
-  // Function to get latest timestamp for a variable
+  // Updated getLatestTimestamp function to ensure it's correctly retrieving timestamps
   const getLatestTimestamp = (variablePath: string): string | undefined => {
     // variablePath is like "namespace.VariableName" e.g., "main-st.Counter"
     const parts = variablePath.split('.');
     if (parts.length < 2) return undefined; // Invalid format
 
     const namespace = parts[0];
-    const targetName = parts.slice(1).join('.'); // Handle names with dots
+    const varName = parts.slice(1).join('.'); // Handle variable names with dots
 
-    // console.log(`DEBUG: getLatestTimestamp searching for ns=${namespace}, name=${targetName}`);
-
+    // Look for this variable in the websocket variables
     for (const wsKey in wsVariables) {
-      // wsKey is like "controllerId:filePath" e.g., "default:main-st"
-      const keyParts = wsKey.split(':');
-      if (keyParts.length < 2) continue; // Skip invalid keys
-
-      const filePath = keyParts[1];
-
-      if (filePath === namespace) {
+      // wsKey format is "controllerId:filePath"
+      if (wsKey.includes(`:${namespace}`)) {
         const variableArray = wsVariables[wsKey];
-        // variableArray is Variable[] = [{ Name: string, Value: any, Timestamp: string, ... }]
-        const foundVar = variableArray?.find((v) => v.Name === targetName);
+        // Look for exact match or match on just the variable name part
+        const foundVar = variableArray?.find(
+          (v) => v.Name === variablePath || v.Name === varName
+        );
 
-        if (foundVar) {
-          // console.log(`DEBUG: Found timestamp for ${variablePath}:`, foundVar.Timestamp);
+        if (foundVar && foundVar.Timestamp) {
           return foundVar.Timestamp;
         }
       }
     }
-    // console.log(`DEBUG: Timestamp not found for ${variablePath}`);
-    return undefined; // Not found
+
+    // Also check history data for most recent timestamp
+    if (historyData && historyData.length > 0) {
+      const latestEntry = historyData[historyData.length - 1];
+      if (latestEntry && latestEntry.timestamp) {
+        return latestEntry.timestamp as string;
+      }
+    }
+
+    return undefined;
   };
 
   // Function to calculate Min/Max from history
@@ -915,7 +923,6 @@ export function TrendsTab({ file }: TrendsTabProps) {
               <XAxis dataKey="time" tickFormatter={formatTimestamp} />
               <YAxis />
               <Tooltip content={<CustomTooltip />} />
-              <Legend />
               {selectedVariables.map((variable, index) => (
                 <Line
                   key={variable}
@@ -938,7 +945,6 @@ export function TrendsTab({ file }: TrendsTabProps) {
           <TableHeader>
             <TableRow>
               <TableHead>Select</TableHead>
-              <TableHead className="w-[40px]">Color</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Path</TableHead>
               <TableHead>Last Timestamp</TableHead>
@@ -1019,24 +1025,6 @@ export function TrendsTab({ file }: TrendsTabProps) {
                         />
                       )}
                     </TableCell>
-                    <TableCell className="w-[40px]">
-                      {!isStruct && selectedVariables.includes(path) && (
-                        <div
-                          className="w-4 h-4 rounded-sm"
-                          style={{
-                            backgroundColor:
-                              COLORS[
-                                selectedVariables.indexOf(path) % COLORS.length
-                              ],
-                          }}
-                          title={`Color: ${
-                            COLORS[
-                              selectedVariables.indexOf(path) % COLORS.length
-                            ]
-                          }`}
-                        />
-                      )}
-                    </TableCell>
                     <TableCell>{variableName}</TableCell>
                     <TableCell className="font-mono text-xs">{path}</TableCell>
                     <TableCell>
@@ -1073,26 +1061,6 @@ export function TrendsTab({ file }: TrendsTabProps) {
                                 id={`select-${memberPath}`}
                                 aria-label={`Select ${memberName}`}
                               />
-                            </TableCell>
-                            <TableCell className="w-[40px]">
-                              {selectedVariables.includes(memberPath) && (
-                                <div
-                                  className="w-4 h-4 rounded-sm"
-                                  style={{
-                                    backgroundColor:
-                                      COLORS[
-                                        selectedVariables.indexOf(memberPath) %
-                                          COLORS.length
-                                      ],
-                                  }}
-                                  title={`Color: ${
-                                    COLORS[
-                                      selectedVariables.indexOf(memberPath) %
-                                        COLORS.length
-                                    ]
-                                  }`}
-                                />
-                              )}
                             </TableCell>
                             <TableCell className="pl-8">{memberName}</TableCell>
                             <TableCell className="font-mono text-xs">
