@@ -160,6 +160,53 @@ const extractVariablesFromAST = (
   return variables;
 };
 
+// Add this function after extractVariablesFromAST to detect and expand structs
+const expandStructs = (variables: string[]): string[] => {
+  const result: string[] = [...variables];
+  const structMap: Record<string, string[]> = {};
+
+  // First pass: identify potential structs by looking for patterns
+  variables.forEach((varPath) => {
+    // Common struct patterns: TON timers, counters, etc.
+    if (
+      varPath.includes('.Timer') ||
+      varPath.endsWith('.TON') ||
+      varPath.endsWith('.CTU') ||
+      varPath.endsWith('.CTD')
+    ) {
+      const basePath = varPath;
+      const namespace = varPath.split('.')[0];
+
+      // For TON timers, add standard members
+      if (varPath.endsWith('.TON') || varPath.includes('.Timer')) {
+        structMap[basePath] = [
+          `${basePath}.IN`,
+          `${basePath}.PT`,
+          `${basePath}.ET`,
+          `${basePath}.Q`,
+        ];
+      }
+
+      // For counters, add standard members
+      if (varPath.endsWith('.CTU') || varPath.endsWith('.CTD')) {
+        structMap[basePath] = [
+          `${basePath}.CU`,
+          `${basePath}.PV`,
+          `${basePath}.Q`,
+          `${basePath}.CV`,
+        ];
+      }
+    }
+  });
+
+  // Add all struct members to the result array
+  Object.values(structMap).forEach((members) => {
+    result.push(...members);
+  });
+
+  return result;
+};
+
 const COLORS = [
   '#8884d8',
   '#82ca9d',
@@ -403,7 +450,7 @@ export function TrendsTab({ file }: TrendsTabProps) {
   // Effect to process the stored compilation result and extract variables
   useEffect(() => {
     if (!namespace) {
-      setStatus('waiting'); // Cannot proceed without namespace
+      setStatus('waiting');
       setErrorMessage(null);
       return;
     }
@@ -414,26 +461,30 @@ export function TrendsTab({ file }: TrendsTabProps) {
         setErrorMessage(null);
         console.log(`Processing AST for ${namespace}...`);
         try {
-          const extractedVars = extractVariablesFromAST(
+          // Extract base variables from the AST
+          const baseVars = extractVariablesFromAST(
             latestCompilationResult.ast,
             namespace
           );
+
+          // Expand struct variables to include their members
+          const expandedVars = expandStructs(baseVars);
+
           console.log(
-            `Extracted ${extractedVars.length} vars for ${namespace}:`,
-            extractedVars
+            `Extracted ${baseVars.length} base vars and expanded to ${expandedVars.length} total vars for ${namespace}`
           );
 
-          if (extractedVars.length > 0) {
-            setAvailableVariables(extractedVars);
+          if (expandedVars.length > 0) {
+            setAvailableVariables(expandedVars);
 
             // Select ALL variables by default
-            setSelectedVariables(extractedVars);
+            setSelectedVariables(expandedVars);
 
             if (isConnected) {
               console.log(
-                `Subscribing to ${extractedVars.length} selected variables from AST for ${namespace}.`
+                `Subscribing to ${expandedVars.length} variables (including struct members) for ${namespace}.`
               );
-              subscribeToVariables(extractedVars, namespace);
+              subscribeToVariables(expandedVars, namespace);
               setHasAttemptedSubscribe(true);
             }
 
@@ -820,7 +871,7 @@ export function TrendsTab({ file }: TrendsTabProps) {
     });
   };
 
-  // Process availableVariables to identify top-level items and structs
+  // Enhance the tableItems useMemo to better detect structs
   const tableItems = useMemo(() => {
     const topLevelPaths = new Set<string>();
     const structPaths = new Set<string>();
@@ -829,17 +880,32 @@ export function TrendsTab({ file }: TrendsTabProps) {
     // First pass: identify potential structs and members
     availableVariables.forEach((path) => {
       const parts = path.split('.');
-      if (parts.length > 2) {
-        // Potential member like namespace.Struct.Member
-        const potentialStructPath = parts.slice(0, -1).join('.');
-        structPaths.add(potentialStructPath);
-        if (!memberMap.has(potentialStructPath)) {
-          memberMap.set(potentialStructPath, []);
+
+      // Special handling for known struct types
+      if (parts.length >= 2) {
+        const lastPart = parts[parts.length - 1];
+        const parentPath = parts.slice(0, -1).join('.');
+
+        // Check if this is a struct member (TON, CTU, etc)
+        if (['IN', 'PT', 'ET', 'Q', 'CU', 'PV', 'CV'].includes(lastPart)) {
+          structPaths.add(parentPath);
+          if (!memberMap.has(parentPath)) {
+            memberMap.set(parentPath, []);
+          }
+          memberMap.get(parentPath)?.push(path);
         }
-        memberMap.get(potentialStructPath)?.push(path);
-      } else if (parts.length === 2) {
-        // Potential top-level simple var or struct root like namespace.Variable
-        topLevelPaths.add(path);
+        // Otherwise check for standard struct patterns
+        else if (parts.length > 2) {
+          const potentialStructPath = parts.slice(0, -1).join('.');
+          structPaths.add(potentialStructPath);
+          if (!memberMap.has(potentialStructPath)) {
+            memberMap.set(potentialStructPath, []);
+          }
+          memberMap.get(potentialStructPath)?.push(path);
+        } else {
+          // Potential top-level simple var or struct root
+          topLevelPaths.add(path);
+        }
       }
     });
 

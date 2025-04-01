@@ -182,6 +182,9 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 
 // handleSubscribe subscribes to variable updates
 func (s *Server) handleSubscribe(conn *websocket.Conn, msg map[string]interface{}) {
+	// Add detailed logging for subscription requests
+	log.Printf("DEBUG: Received subscription request with %d keys: %v", len(msg), getMapKeys(msg))
+
 	// Extract variables to subscribe to
 	varsData, ok := msg["variables"]
 	if !ok {
@@ -191,8 +194,22 @@ func (s *Server) handleSubscribe(conn *websocket.Conn, msg map[string]interface{
 
 	varsToSubscribe, ok := varsData.([]interface{})
 	if !ok {
-		log.Printf("Variables not in expected format")
+		log.Printf("Variables field is not an array")
 		return
+	}
+
+	// Log the requested variables
+	log.Printf("DEBUG: Client requesting subscription to %d variables", len(varsToSubscribe))
+	if len(varsToSubscribe) > 0 {
+		// Log a sample of the requested variables
+		sampleSize := min(10, len(varsToSubscribe))
+		sampleVars := make([]string, sampleSize)
+		for i := 0; i < sampleSize; i++ {
+			if varStr, ok := varsToSubscribe[i].(string); ok {
+				sampleVars[i] = varStr
+			}
+		}
+		log.Printf("DEBUG: Sample of requested variables: %v", sampleVars)
 	}
 
 	// Extract path filter if provided
@@ -307,6 +324,9 @@ func (s *Server) handleSubscribe(conn *websocket.Conn, msg map[string]interface{
 		}
 	}
 
+	// At the end of the function, add:
+	log.Printf("DEBUG: Client now subscribed to %d variables in total", len(s.subscriptions[conn]))
+
 	conn.WriteJSON(response)
 }
 
@@ -355,6 +375,13 @@ func (s *Server) sendPeriodicUpdates(conn *websocket.Conn) {
 			// Calculate total variables available before filtering
 			totalVars := countVariables(allVariables)
 
+			// Before filtering variables
+			log.Printf("DEBUG: Processing update with %d subscriptions and path filter: '%s'", len(subscriptions), pathFilter)
+			if len(subscriptions) > 0 {
+				firstFew := getFirstFewKeys(subscriptions, 5)
+				log.Printf("DEBUG: First few subscriptions: %v", firstFew)
+			}
+
 			// Filter variables if needed
 			filteredVariables := make(map[string][]*runtime.Variable)
 			if len(subscriptions) > 0 {
@@ -363,6 +390,8 @@ func (s *Server) sendPeriodicUpdates(conn *websocket.Conn) {
 
 				// Filter by subscription
 				for path, vars := range allVariables {
+					log.Printf("DEBUG: Processing path '%s' with %d variables", path, len(vars))
+
 					// Check path filter with better logic
 					if pathFilter != "" {
 						// Try different variations to match paths more flexibly
@@ -425,128 +454,88 @@ func (s *Server) sendPeriodicUpdates(conn *websocket.Conn) {
 					}
 
 					var filteredVars []*runtime.Variable
+
+					// Skip the two-pass approach and directly include ALL subscribed variables
+					// plus related timer variables when needed
 					for _, v := range vars {
+						// Direct subscription match - highest priority
 						if subscriptions[v.Name] {
 							filteredVars = append(filteredVars, v)
 							foundVariables[v.Name] = true
+							log.Printf("DEBUG: Including variable with direct match: %s", v.Name)
+							continue // Skip further checks
+						}
+
+						// Check alternate name formats with namespace
+						if strings.Contains(v.Name, ".") {
+							parts := strings.SplitN(v.Name, ".", 2)
+							if len(parts) == 2 && pathFilter != "" {
+								altName := pathFilter + "." + parts[1]
+								if subscriptions[altName] {
+									filteredVars = append(filteredVars, v)
+									foundVariables[altName] = true
+									log.Printf("DEBUG: Including variable with alternate name match: %s → %s", v.Name, altName)
+									continue // Skip further checks
+								}
+							}
+						}
+
+						// Check if this is a timer-related variable
+						isTimerVar := strings.Contains(v.Name, "Timer") ||
+							strings.Contains(v.Name, ".ET") ||
+							strings.Contains(v.Name, ".Q") ||
+							strings.Contains(v.Name, ".PT") ||
+							strings.Contains(v.Name, ".IN")
+
+						// If it's a timer variable, check if we have any timers subscribed
+						if isTimerVar {
+							// Look for any timer-related subscriptions in this path
+							timerFound := false
+							timerBase := ""
+
+							// Try to extract timer base name
+							if idx := strings.Index(v.Name, "."); idx > 0 {
+								timerBase = v.Name[:idx]
+							}
+
+							// Check if we have any timer-related subscriptions
+							for subVar := range subscriptions {
+								if strings.Contains(subVar, "Timer") ||
+									strings.Contains(subVar, ".ET") ||
+									strings.Contains(subVar, ".Q") ||
+									strings.Contains(subVar, ".PT") ||
+									strings.Contains(subVar, ".IN") {
+
+									// Check if this timer is related to our timer
+									if timerBase != "" && strings.HasPrefix(subVar, timerBase) {
+										timerFound = true
+										log.Printf("DEBUG: Found related timer subscription %s for %s", subVar, v.Name)
+										break
+									}
+								}
+							}
+
+							// Include this timer variable if related to any subscribed timer
+							if timerFound {
+								filteredVars = append(filteredVars, v)
+								foundVariables[v.Name] = true
+								log.Printf("DEBUG: Including related timer variable: %s", v.Name)
+							}
 						}
 					}
 
 					if len(filteredVars) > 0 {
+						log.Printf("DEBUG: Path '%s' has %d variables after filtering", path, len(filteredVars))
 						filteredVariables[path] = filteredVars
 					}
 				}
 
-				// Create a special "missing" path for variables that were subscribed to but not found
-				var missingVars []*runtime.Variable
-
-				// Use the client's requested path filter as the base for the missing variables path
-				// This preserves the original path sent by the client
-				requestedPath := pathFilter
-				if requestedPath == "" {
-					requestedPath = "missing"
+				// Add summary log
+				totalFiltered := 0
+				for _, vars := range filteredVariables {
+					totalFiltered += len(vars)
 				}
-
-				for varName := range subscriptions {
-					if !foundVariables[varName] {
-						// Check if this is a namespaced variable (contains a dot)
-						var displayName = varName
-						var varPath = requestedPath
-
-						// If it's a namespaced variable, extract the namespace to use as path
-						if strings.Contains(varName, ".") {
-							parts := strings.Split(varName, ".")
-							if len(parts) > 1 {
-								namespace := parts[0]
-
-								// Use the client's requested path by default, but fall back to
-								// the variable's namespace if no specific path was requested
-								if requestedPath == "missing" {
-									// Convert main-st to main.st for better matching if needed
-									if strings.Contains(namespace, "-") {
-										cleanNamespace := strings.ReplaceAll(namespace, "-", ".")
-										varPath = cleanNamespace
-									} else {
-										varPath = namespace
-									}
-								}
-
-								// Use the original varName as the display name
-								displayName = varName
-							}
-						}
-
-						// Create a placeholder variable with "???" value
-						missingVar := &runtime.Variable{
-							Name:      displayName,
-							DataType:  runtime.TypeString,
-							Value:     "???",
-							Quality:   runtime.QualityUncertain,
-							Timestamp: time.Now(),
-							Path:      varPath, // Use the path based on client's request
-						}
-						missingVars = append(missingVars, missingVar)
-					}
-				}
-
-				// Add missing variables to the filtered list if any were found
-				if len(missingVars) > 0 {
-					// Use the original requested path or "missing" if not specified
-					missingVarPath := requestedPath
-					if missingVarPath == "" {
-						missingVarPath = "missing"
-					}
-
-					filteredVariables[missingVarPath] = missingVars
-
-					// Only log messages about missing variables occasionally to reduce spam
-					shouldLogMissing := (updateCounter == 1) || // First update always logs
-						(updateCounter%60 == 0) || // Log once per minute
-						(time.Since(lastLogTime) > 300*time.Second) // Or if we haven't logged in 5 minutes
-
-					if shouldLogMissing {
-						log.Printf("Added %d missing variables with placeholder values under path '%s'",
-							len(missingVars), missingVarPath)
-					}
-
-					// For debugging: collect available variable names when missing vars are detected
-					var availableVarNames []string
-
-					// Extract variable names from all variables for debugging purposes
-					for path, vars := range allVariables {
-						for _, v := range vars {
-							// Include both the simple name and fully qualified path.name
-							availableVarNames = append(availableVarNames, v.Name)
-
-							// Add path.Name format for easier discovery
-							if path != "" && path != "missing" {
-								availableVarNames = append(availableVarNames, path+"."+v.Name)
-							}
-						}
-					}
-
-					// Sort and log the available variables
-					if len(availableVarNames) > 0 {
-						sort.Strings(availableVarNames)
-
-						// Only log available variables when we're also logging about missing variables
-						if shouldLogMissing {
-							log.Printf("Available variables that could be subscribed to: %v", availableVarNames)
-						}
-
-						// Store in filteredVariables for client-side debugging
-						filteredVariables["_availableVariables"] = []*runtime.Variable{
-							{
-								Name:      "_debug",
-								DataType:  runtime.TypeString,
-								Value:     strings.Join(availableVarNames, ", "),
-								Quality:   runtime.QualityGood,
-								Timestamp: time.Now(),
-								Path:      "debug",
-							},
-						}
-					}
-				}
+				log.Printf("DEBUG: Final result: %d variables in %d paths", totalFiltered, len(filteredVariables))
 			} else {
 				// No subscriptions, use all variables
 				filteredVariables = allVariables
@@ -1443,4 +1432,33 @@ func (s *Server) handleCreateTestVariables(c *gin.Context) {
 		"count":     varCount,
 		"variables": allVariables,
 	})
+}
+
+// Add this helper function if it doesn't exist
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// Add this helper function at the end of the file
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Add helper function at the end of the file, before the closing brace
+func getFirstFewKeys(m map[string]bool, count int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+		if len(keys) >= count {
+			break
+		}
+	}
+	return keys
 }
