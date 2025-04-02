@@ -340,259 +340,256 @@ func (s *Server) sendPeriodicUpdates(conn *websocket.Conn) {
 	var lastLogTime time.Time
 	var updateCounter int
 
-	for {
-		select {
-		case <-ticker.C:
-			updateCounter++
-			status := s.runtime.GetStatus()
+	for range ticker.C {
+		updateCounter++
+		status := s.runtime.GetStatus()
 
-			// Create a hash of status to detect changes
-			statusJSON, _ := json.Marshal(status)
-			statusHash := fmt.Sprintf("%x", md5.Sum(statusJSON))
+		// Create a hash of status to detect changes
+		statusJSON, _ := json.Marshal(status)
+		statusHash := fmt.Sprintf("%x", md5.Sum(statusJSON))
 
-			// Get variables based on subscriptions
-			s.mutex.Lock()
-			subscriptions := s.subscriptions[conn]
-			pathFilter := s.subscriptionPath[conn]
-			s.mutex.Unlock()
+		// Get variables based on subscriptions
+		s.mutex.Lock()
+		subscriptions := s.subscriptions[conn]
+		pathFilter := s.subscriptionPath[conn]
+		s.mutex.Unlock()
 
-			// Skip sending variables if there are no subscriptions
-			if len(subscriptions) == 0 {
-				// Only send status updates less frequently when no subscriptions
-				if updateCounter%10 == 0 || statusHash != lastStatusHash {
-					conn.WriteJSON(map[string]interface{}{
-						"type":   "update",
-						"status": status,
-					})
-					lastStatusHash = statusHash
-				}
-				continue
+		// Skip sending variables if there are no subscriptions
+		if len(subscriptions) == 0 {
+			// Only send status updates less frequently when no subscriptions
+			if updateCounter%10 == 0 || statusHash != lastStatusHash {
+				conn.WriteJSON(map[string]interface{}{
+					"type":   "update",
+					"status": status,
+				})
+				lastStatusHash = statusHash
 			}
+			continue
+		}
 
-			// Get variables from runtime
-			allVariables := s.runtime.GetAllVariables()
+		// Get variables from runtime
+		allVariables := s.runtime.GetAllVariables()
 
-			// Calculate total variables available before filtering
-			totalVars := countVariables(allVariables)
+		// Calculate total variables available before filtering
+		totalVars := countVariables(allVariables)
 
-			// Before filtering variables
-			log.Printf("DEBUG: Processing update with %d subscriptions and path filter: '%s'", len(subscriptions), pathFilter)
-			if len(subscriptions) > 0 {
-				firstFew := getFirstFewKeys(subscriptions, 5)
-				log.Printf("DEBUG: First few subscriptions: %v", firstFew)
-			}
+		// Before filtering variables
+		log.Printf("DEBUG: Processing update with %d subscriptions and path filter: '%s'", len(subscriptions), pathFilter)
+		if len(subscriptions) > 0 {
+			firstFew := getFirstFewKeys(subscriptions, 5)
+			log.Printf("DEBUG: First few subscriptions: %v", firstFew)
+		}
 
-			// Filter variables if needed
-			filteredVariables := make(map[string][]*runtime.Variable)
-			if len(subscriptions) > 0 {
-				// Keep track of which variables we've found
-				foundVariables := make(map[string]bool)
+		// Filter variables if needed
+		filteredVariables := make(map[string][]*runtime.Variable)
+		if len(subscriptions) > 0 {
+			// Keep track of which variables we've found
+			foundVariables := make(map[string]bool)
 
-				// Filter by subscription
-				for path, vars := range allVariables {
-					log.Printf("DEBUG: Processing path '%s' with %d variables", path, len(vars))
+			// Filter by subscription
+			for path, vars := range allVariables {
+				log.Printf("DEBUG: Processing path '%s' with %d variables", path, len(vars))
 
-					// Check path filter with better logic
-					if pathFilter != "" {
-						// Try different variations to match paths more flexibly
-						var matches bool
+				// Check path filter with better logic
+				if pathFilter != "" {
+					// Try different variations to match paths more flexibly
+					var matches bool
 
-						// 1. Direct contains check
+					// 1. Direct contains check
+					if strings.Contains(path, pathFilter) {
+						matches = true
+					}
+
+					// 2. Check basename (filename without path)
+					pathFilterBase := filepath.Base(pathFilter)
+					if pathFilterBase != pathFilter && strings.Contains(path, pathFilterBase) {
+						matches = true
+					}
+
+					// 3. Check with extensions stripped
+					pathNoExt := strings.TrimSuffix(path, filepath.Ext(path))
+					filterNoExt := strings.TrimSuffix(pathFilter, filepath.Ext(pathFilter))
+					if strings.Contains(pathNoExt, filterNoExt) {
+						matches = true
+					}
+
+					// 4. Special handling for controller names - more relaxed matching
+					if strings.Contains(pathFilter, "controller") {
+						// Extract just the controller part for matching
+						controllerRegex := regexp.MustCompile(`(controller\w*)`)
+						pathMatches := controllerRegex.FindStringSubmatch(path)
+						if len(pathMatches) > 0 {
+							// We found a controller pattern in the path - good enough for matching
+							matches = true
+						}
+					}
+
+					// 5. If path is short like "st" or "main", be more lenient
+					if len(pathFilter) <= 4 {
+						// For short filters, just check if it appears anywhere
 						if strings.Contains(path, pathFilter) {
 							matches = true
 						}
 
-						// 2. Check basename (filename without path)
-						pathFilterBase := filepath.Base(pathFilter)
-						if pathFilterBase != pathFilter && strings.Contains(path, pathFilterBase) {
-							matches = true
-						}
-
-						// 3. Check with extensions stripped
-						pathNoExt := strings.TrimSuffix(path, filepath.Ext(path))
-						filterNoExt := strings.TrimSuffix(pathFilter, filepath.Ext(pathFilter))
-						if strings.Contains(pathNoExt, filterNoExt) {
-							matches = true
-						}
-
-						// 4. Special handling for controller names - more relaxed matching
-						if strings.Contains(pathFilter, "controller") {
-							// Extract just the controller part for matching
-							controllerRegex := regexp.MustCompile(`(controller\w*)`)
-							pathMatches := controllerRegex.FindStringSubmatch(path)
-							if len(pathMatches) > 0 {
-								// We found a controller pattern in the path - good enough for matching
+						// Also check for variations like "main-st" for "main.st"
+						if strings.Contains(pathFilter, ".") {
+							dashVersion := strings.ReplaceAll(pathFilter, ".", "-")
+							if strings.Contains(path, dashVersion) {
 								matches = true
 							}
-						}
-
-						// 5. If path is short like "st" or "main", be more lenient
-						if len(pathFilter) <= 4 {
-							// For short filters, just check if it appears anywhere
-							if strings.Contains(path, pathFilter) {
+						} else if strings.Contains(pathFilter, "-") {
+							dotVersion := strings.ReplaceAll(pathFilter, "-", ".")
+							if strings.Contains(path, dotVersion) {
 								matches = true
 							}
-
-							// Also check for variations like "main-st" for "main.st"
-							if strings.Contains(pathFilter, ".") {
-								dashVersion := strings.ReplaceAll(pathFilter, ".", "-")
-								if strings.Contains(path, dashVersion) {
-									matches = true
-								}
-							} else if strings.Contains(pathFilter, "-") {
-								dotVersion := strings.ReplaceAll(pathFilter, "-", ".")
-								if strings.Contains(path, dotVersion) {
-									matches = true
-								}
-							}
-						}
-
-						// Skip if no match found with any method
-						if !matches {
-							continue
 						}
 					}
 
-					var filteredVars []*runtime.Variable
+					// Skip if no match found with any method
+					if !matches {
+						continue
+					}
+				}
 
-					// Skip the two-pass approach and directly include ALL subscribed variables
-					// plus related timer variables when needed
-					for _, v := range vars {
-						// Direct subscription match - highest priority
-						if subscriptions[v.Name] {
+				var filteredVars []*runtime.Variable
+
+				// Skip the two-pass approach and directly include ALL subscribed variables
+				// plus related timer variables when needed
+				for _, v := range vars {
+					// Direct subscription match - highest priority
+					if subscriptions[v.Name] {
+						filteredVars = append(filteredVars, v)
+						foundVariables[v.Name] = true
+						log.Printf("DEBUG: Including variable with direct match: %s", v.Name)
+						continue // Skip further checks
+					}
+
+					// Check alternate name formats with namespace
+					if strings.Contains(v.Name, ".") {
+						parts := strings.SplitN(v.Name, ".", 2)
+						if len(parts) == 2 && pathFilter != "" {
+							altName := pathFilter + "." + parts[1]
+							if subscriptions[altName] {
+								filteredVars = append(filteredVars, v)
+								foundVariables[altName] = true
+								log.Printf("DEBUG: Including variable with alternate name match: %s → %s", v.Name, altName)
+								continue // Skip further checks
+							}
+						}
+					}
+
+					// Check if this is a timer-related variable
+					isTimerVar := strings.Contains(v.Name, "Timer") ||
+						strings.Contains(v.Name, ".ET") ||
+						strings.Contains(v.Name, ".Q") ||
+						strings.Contains(v.Name, ".PT") ||
+						strings.Contains(v.Name, ".IN")
+
+					// If it's a timer variable, check if we have any timers subscribed
+					if isTimerVar {
+						// Look for any timer-related subscriptions in this path
+						timerFound := false
+						timerBase := ""
+
+						// Try to extract timer base name
+						if idx := strings.Index(v.Name, "."); idx > 0 {
+							timerBase = v.Name[:idx]
+						}
+
+						// Check if we have any timer-related subscriptions
+						for subVar := range subscriptions {
+							if strings.Contains(subVar, "Timer") ||
+								strings.Contains(subVar, ".ET") ||
+								strings.Contains(subVar, ".Q") ||
+								strings.Contains(subVar, ".PT") ||
+								strings.Contains(subVar, ".IN") {
+
+								// Check if this timer is related to our timer
+								if timerBase != "" && strings.HasPrefix(subVar, timerBase) {
+									timerFound = true
+									log.Printf("DEBUG: Found related timer subscription %s for %s", subVar, v.Name)
+									break
+								}
+							}
+						}
+
+						// Include this timer variable if related to any subscribed timer
+						if timerFound {
 							filteredVars = append(filteredVars, v)
 							foundVariables[v.Name] = true
-							log.Printf("DEBUG: Including variable with direct match: %s", v.Name)
-							continue // Skip further checks
+							log.Printf("DEBUG: Including related timer variable: %s", v.Name)
 						}
-
-						// Check alternate name formats with namespace
-						if strings.Contains(v.Name, ".") {
-							parts := strings.SplitN(v.Name, ".", 2)
-							if len(parts) == 2 && pathFilter != "" {
-								altName := pathFilter + "." + parts[1]
-								if subscriptions[altName] {
-									filteredVars = append(filteredVars, v)
-									foundVariables[altName] = true
-									log.Printf("DEBUG: Including variable with alternate name match: %s → %s", v.Name, altName)
-									continue // Skip further checks
-								}
-							}
-						}
-
-						// Check if this is a timer-related variable
-						isTimerVar := strings.Contains(v.Name, "Timer") ||
-							strings.Contains(v.Name, ".ET") ||
-							strings.Contains(v.Name, ".Q") ||
-							strings.Contains(v.Name, ".PT") ||
-							strings.Contains(v.Name, ".IN")
-
-						// If it's a timer variable, check if we have any timers subscribed
-						if isTimerVar {
-							// Look for any timer-related subscriptions in this path
-							timerFound := false
-							timerBase := ""
-
-							// Try to extract timer base name
-							if idx := strings.Index(v.Name, "."); idx > 0 {
-								timerBase = v.Name[:idx]
-							}
-
-							// Check if we have any timer-related subscriptions
-							for subVar := range subscriptions {
-								if strings.Contains(subVar, "Timer") ||
-									strings.Contains(subVar, ".ET") ||
-									strings.Contains(subVar, ".Q") ||
-									strings.Contains(subVar, ".PT") ||
-									strings.Contains(subVar, ".IN") {
-
-									// Check if this timer is related to our timer
-									if timerBase != "" && strings.HasPrefix(subVar, timerBase) {
-										timerFound = true
-										log.Printf("DEBUG: Found related timer subscription %s for %s", subVar, v.Name)
-										break
-									}
-								}
-							}
-
-							// Include this timer variable if related to any subscribed timer
-							if timerFound {
-								filteredVars = append(filteredVars, v)
-								foundVariables[v.Name] = true
-								log.Printf("DEBUG: Including related timer variable: %s", v.Name)
-							}
-						}
-					}
-
-					if len(filteredVars) > 0 {
-						log.Printf("DEBUG: Path '%s' has %d variables after filtering", path, len(filteredVars))
-						filteredVariables[path] = filteredVars
 					}
 				}
 
-				// Add summary log
-				totalFiltered := 0
-				for _, vars := range filteredVariables {
-					totalFiltered += len(vars)
+				if len(filteredVars) > 0 {
+					log.Printf("DEBUG: Path '%s' has %d variables after filtering", path, len(filteredVars))
+					filteredVariables[path] = filteredVars
 				}
-				log.Printf("DEBUG: Final result: %d variables in %d paths", totalFiltered, len(filteredVariables))
-			} else {
-				// No subscriptions, use all variables
-				filteredVariables = allVariables
 			}
 
-			// Create a hash of variables to detect changes
-			varJSON, _ := json.Marshal(filteredVariables)
-			varHash := fmt.Sprintf("%x", md5.Sum(varJSON))
+			// Add summary log
+			totalFiltered := 0
+			for _, vars := range filteredVariables {
+				totalFiltered += len(vars)
+			}
+			log.Printf("DEBUG: Final result: %d variables in %d paths", totalFiltered, len(filteredVariables))
+		} else {
+			// No subscriptions, use all variables
+			filteredVariables = allVariables
+		}
+
+		// Create a hash of variables to detect changes
+		varJSON, _ := json.Marshal(filteredVariables)
+		varHash := fmt.Sprintf("%x", md5.Sum(varJSON))
+
+		// Include debugging info if we have missing variables
+		var missingCount = 0
+		// Check all paths that might contain missing variables
+		for _, vars := range filteredVariables {
+			// Count variables with "???" placeholder value in any path
+			for _, v := range vars {
+				if v.Value == "???" {
+					missingCount++
+				}
+			}
+		}
+
+		// Only send update if something changed
+		if varHash != lastVarHash || statusHash != lastStatusHash {
+			lastVarHash = varHash
+			lastStatusHash = statusHash
+
+			// Only log if:
+			// 1. We have variables AND it's been at least 60 seconds since the last log, OR
+			// 2. It's been at least 5 minutes since the last log, OR
+			// 3. It's the first message (updateCounter == 1)
+			// Calculate filtered variables count for logging purposes
+			filteredVarsCount := countVariables(filteredVariables)
+			shouldLog := (updateCounter == 1) || // First update always logs
+				(filteredVarsCount > 0 && time.Since(lastLogTime) > 60*time.Second) || // Log once per minute if we have variables
+				(time.Since(lastLogTime) > 300*time.Second) // Or log every 5 minutes regardless
 
 			// Include debugging info if we have missing variables
-			var missingCount = 0
-			// Check all paths that might contain missing variables
-			for _, vars := range filteredVariables {
-				// Count variables with "???" placeholder value in any path
-				for _, v := range vars {
-					if v.Value == "???" {
-						missingCount++
-					}
-				}
+			if missingCount > 0 && shouldLog {
+				log.Printf("Sending update to client: %d paths, %d total variables (of %d available), %d missing variables",
+					len(filteredVariables), filteredVarsCount, totalVars, missingCount)
+				lastLogTime = time.Now()
+			} else if shouldLog {
+				log.Printf("Sending update to client: %d paths, %d total variables (of %d available)",
+					len(filteredVariables), filteredVarsCount, totalVars)
+				lastLogTime = time.Now()
 			}
 
-			// Only send update if something changed
-			if varHash != lastVarHash || statusHash != lastStatusHash {
-				lastVarHash = varHash
-				lastStatusHash = statusHash
+			update := map[string]interface{}{
+				"type":      "update",
+				"status":    status,
+				"variables": filteredVariables,
+			}
 
-				// Only log if:
-				// 1. We have variables AND it's been at least 60 seconds since the last log, OR
-				// 2. It's been at least 5 minutes since the last log, OR
-				// 3. It's the first message (updateCounter == 1)
-				// Calculate filtered variables count for logging purposes
-				filteredVarsCount := countVariables(filteredVariables)
-				shouldLog := (updateCounter == 1) || // First update always logs
-					(filteredVarsCount > 0 && time.Since(lastLogTime) > 60*time.Second) || // Log once per minute if we have variables
-					(time.Since(lastLogTime) > 300*time.Second) // Or log every 5 minutes regardless
-
-				// Include debugging info if we have missing variables
-				if missingCount > 0 && shouldLog {
-					log.Printf("Sending update to client: %d paths, %d total variables (of %d available), %d missing variables",
-						len(filteredVariables), filteredVarsCount, totalVars, missingCount)
-					lastLogTime = time.Now()
-				} else if shouldLog {
-					log.Printf("Sending update to client: %d paths, %d total variables (of %d available)",
-						len(filteredVariables), filteredVarsCount, totalVars)
-					lastLogTime = time.Now()
-				}
-
-				update := map[string]interface{}{
-					"type":      "update",
-					"status":    status,
-					"variables": filteredVariables,
-				}
-
-				if err := conn.WriteJSON(update); err != nil {
-					log.Printf("Error sending update: %v", err)
-					return
-				}
+			if err := conn.WriteJSON(update); err != nil {
+				log.Printf("Error sending update: %v", err)
+				return
 			}
 		}
 	}

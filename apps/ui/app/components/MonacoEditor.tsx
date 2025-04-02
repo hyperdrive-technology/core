@@ -862,8 +862,15 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   ]);
 
   // Get WebSocket context at component level
-  const { controllers, connect, disconnect, addController, isConnected } =
-    useWebSocket();
+  const {
+    controllers,
+    connect,
+    disconnect,
+    addController,
+    isConnected,
+    variables: wsVariables,
+    subscribeToVariables,
+  } = useWebSocket();
 
   // Add a special safety effect to protect against DOM node errors
   useEffect(() => {
@@ -2385,6 +2392,257 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
     return lines;
   };
+
+  // Add new interfaces after other interfaces
+  interface LiveValueDecoration {
+    id: string;
+    range: {
+      startLineNumber: number;
+      startColumn: number;
+      endLineNumber: number;
+      endColumn: number;
+    };
+    value: string | number | boolean;
+    isBoolean: boolean;
+  }
+
+  // Inside MonacoEditor component, add new state
+  const [decorations, setDecorations] = useState<string[]>([]);
+  const [liveValues, setLiveValues] = useState<LiveValueDecoration[]>([]);
+  const decorationsRef = useRef<LiveValueDecoration[]>([]);
+
+  // Fix the decoration setup effect
+  useEffect(() => {
+    if (monacoRef.current && editorRef.current) {
+      const monaco = monacoRef.current;
+
+      // Add CSS for live value decorations
+      const styleElement = document.createElement('style');
+      styleElement.textContent = `
+        .live-value-true {
+          background-color: rgba(34, 197, 94, 0.1) !important;
+          border: 1px solid rgba(34, 197, 94, 0.4) !important;
+          border-radius: 3px !important;
+          margin: 0 2px !important;
+        }
+        .live-value-false {
+          border: 1px solid rgba(34, 197, 94, 0.4) !important;
+          border-radius: 3px !important;
+          margin: 0 2px !important;
+        }
+        .live-value-badge {
+          background-color: rgba(34, 197, 94, 0.1) !important;
+          color: rgb(34, 197, 94) !important;
+          padding: 0 4px !important;
+          margin-left: 4px !important;
+          font-weight: 500 !important;
+          border: 1px solid rgba(34, 197, 94, 0.4) !important;
+          border-radius: 3px !important;
+        }
+      `;
+      document.head.appendChild(styleElement);
+
+      return () => {
+        styleElement.remove();
+      };
+    }
+  }, []);
+
+  // Add function to extract variables from code
+  const extractVariablesFromCode = (
+    code: string
+  ): { name: string; line: number; column: number }[] => {
+    const variables: { name: string; line: number; column: number }[] = [];
+    const lines = code.split('\n');
+
+    // Simple regex to match variable declarations
+    const varDeclRegex = /\b([A-Za-z_][A-Za-z0-9_]*)\s*:/g;
+
+    lines.forEach((line, lineIndex) => {
+      let match;
+      while ((match = varDeclRegex.exec(line)) !== null) {
+        variables.push({
+          name: match[1],
+          line: lineIndex + 1,
+          column: match.index + 1,
+        });
+      }
+    });
+
+    return variables;
+  };
+
+  // Add a ref to track previous values to avoid unnecessary updates
+  const previousValuesRef = useRef<Record<string, any>>({});
+
+  // Update the decoration effect
+  useEffect(() => {
+    if (
+      !editorRef.current ||
+      !activeFile ||
+      !isConnected ||
+      !monacoRef.current
+    ) {
+      return;
+    }
+
+    const editor = editorRef.current;
+    const model = editor.getModel();
+    if (!model) return;
+
+    // Keep track of current decoration IDs
+    let currentDecorationIds: string[] = [];
+
+    // Track decorations by variable name for efficient updates
+    const decorationMap = new Map<string, { id: string[]; value: any }>();
+
+    // Extract variables from current file
+    const code = model.getValue();
+    const variables = extractVariablesFromCode(code);
+
+    // Get namespace from file name
+    const fileName = activeFile.name.replace(/\.(st|iec)$/, '');
+    const namespace = `${fileName}-st`;
+
+    // Subscribe to variables
+    const varPaths = variables.map((v) => `${namespace}.${v.name}`);
+    if (varPaths.length > 0) {
+      subscribeToVariables(varPaths, namespace);
+    }
+
+    // Helper function to create decoration for a variable
+    const createDecoration = (
+      variable: { name: string; line: number; column: number },
+      value: any
+    ) => {
+      const isBoolean = typeof value === 'boolean';
+      const endColumn = variable.column + variable.name.length;
+
+      if (isBoolean) {
+        return {
+          range: new monacoRef.current!.Range(
+            variable.line,
+            variable.column,
+            variable.line,
+            endColumn
+          ),
+          options: {
+            isWholeLine: false,
+            className: value ? 'live-value-true' : 'live-value-false',
+            stickiness:
+              monacoRef.current!.editor.TrackedRangeStickiness
+                .NeverGrowsWhenTypingAtEdges,
+            hoverMessage: { value: `Current value: ${value}` },
+          },
+        };
+      } else {
+        // For analog values, add a badge after the variable name
+        return {
+          range: new monacoRef.current!.Range(
+            variable.line,
+            variable.column,
+            variable.line,
+            endColumn
+          ),
+          options: {
+            isWholeLine: false,
+            after: {
+              content: ` ${value}`,
+              className: 'live-value-badge',
+            },
+            stickiness:
+              monacoRef.current!.editor.TrackedRangeStickiness
+                .NeverGrowsWhenTypingAtEdges,
+            hoverMessage: { value: `Current value: ${value}` },
+          },
+        };
+      }
+    };
+
+    // Update decorations when WebSocket variables change
+    const updateDecorations = () => {
+      if (model.isDisposed()) return;
+
+      let hasChanges = false;
+      const newDecorations: any[] = [];
+      const updatedValues: Record<string, any> = {};
+
+      variables.forEach((variable) => {
+        const varPath = `${namespace}.${variable.name}`;
+        let value: any = undefined;
+
+        // Find value in WebSocket variables
+        for (const [path, vars] of Object.entries(wsVariables)) {
+          if (path.includes(`:${namespace}`)) {
+            const found = (vars as any[]).find((v) => v.Name === varPath);
+            if (found) {
+              value = found.Value;
+              break;
+            }
+          }
+        }
+
+        if (value !== undefined) {
+          updatedValues[varPath] = value;
+
+          // Check if value has changed
+          if (previousValuesRef.current[varPath] !== value) {
+            hasChanges = true;
+
+            // Create decoration based on value type
+            const decoration = createDecoration(variable, value);
+            newDecorations.push(decoration);
+
+            // Update decoration map
+            if (!decorationMap.has(varPath)) {
+              decorationMap.set(varPath, { id: [], value });
+            } else {
+              decorationMap.get(varPath)!.value = value;
+            }
+          } else {
+            // Reuse existing decoration
+            const existing = decorationMap.get(varPath);
+            if (existing) {
+              newDecorations.push(createDecoration(variable, existing.value));
+            }
+          }
+        }
+      });
+
+      // Only update decorations if values have changed
+      if (hasChanges) {
+        currentDecorationIds = editor.deltaDecorations(
+          currentDecorationIds,
+          newDecorations
+        );
+        previousValuesRef.current = updatedValues;
+
+        // Update decoration map with new IDs
+        Array.from(decorationMap.entries()).forEach(
+          ([varPath, data], index) => {
+            if (currentDecorationIds[index]) {
+              data.id = [currentDecorationIds[index]];
+            }
+          }
+        );
+      }
+    };
+
+    // Initial update and interval
+    updateDecorations();
+    const interval = setInterval(updateDecorations, 100);
+
+    // Cleanup function
+    return () => {
+      clearInterval(interval);
+      if (!model.isDisposed()) {
+        editor.deltaDecorations(currentDecorationIds, []);
+        currentDecorationIds = [];
+        decorationMap.clear();
+        previousValuesRef.current = {};
+      }
+    };
+  }, [activeFile, isConnected, wsVariables, monacoRef]);
 
   return (
     <div className="flex flex-col h-full">
