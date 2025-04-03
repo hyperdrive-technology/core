@@ -1,10 +1,9 @@
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { Editor, Monaco, OnMount } from '@monaco-editor/react';
-import { ChevronLeft, ChevronRight, File, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { Resizable } from 're-resizable';
-import React, {
+import {
   Component,
   ReactNode,
   useCallback,
@@ -73,49 +72,6 @@ class EditorErrorBoundary extends Component<{ children: ReactNode }> {
   }
 }
 
-// Tab Component (rename to LocalEditorTab to avoid naming conflicts)
-const LocalEditorTab: React.FC<{
-  file: FileNode;
-  isActive: boolean;
-  onClick: () => void;
-  onClose: () => void;
-  hasUnsavedChanges: boolean;
-  tabType?: TabType;
-}> = ({ file, isActive, onClick, onClose, hasUnsavedChanges }) => {
-  const handleClose = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onClose();
-  };
-
-  return (
-    <div
-      className={cn(
-        'flex items-center px-3 py-2 border-r dark:border-gray-700 cursor-pointer select-none',
-        isActive
-          ? ' bg-white dark:bg-gray-800 border-b-2 border-b-blue-500 pb-[6px]'
-          : 'bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800'
-      )}
-      onClick={onClick}
-    >
-      <File size={14} className="mr-2 text-gray-500" />
-      <span className="mr-2">
-        {file.name}
-        {hasUnsavedChanges && (
-          <span
-            className="inline-block mb-[1px] ml-1.5 h-2 w-2 rounded-full bg-gray-900 dark:bg-gray-100"
-            title="Unsaved changes"
-          />
-        )}
-      </span>
-      <X
-        size={14}
-        className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-        onClick={handleClose}
-      />
-    </div>
-  );
-};
-
 // Update the component to accept initialFiles prop
 interface MonacoEditorProps {
   initialFiles?: FileNode[];
@@ -128,7 +84,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   const [openFiles, setOpenFiles] = useState<FileNode[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   // Remove this unused static connected state
-  const [iecFiles, setIecFiles] = useState<IECFile[]>([]);
+  const [_iecFiles, setIecFiles] = useState<IECFile[]>([]);
 
   const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
   const [isDeploying, setIsDeploying] = useState(false);
@@ -214,7 +170,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   const [navPosition, setNavPosition] = useState(-1);
 
   // State for tracking unsaved changes
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [_hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [hasChangesSinceCompilation, setHasChangesSinceCompilation] =
     useState(false);
 
@@ -2393,29 +2349,9 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     return lines;
   };
 
-  // Add new interfaces after other interfaces
-  interface LiveValueDecoration {
-    id: string;
-    range: {
-      startLineNumber: number;
-      startColumn: number;
-      endLineNumber: number;
-      endColumn: number;
-    };
-    value: string | number | boolean;
-    isBoolean: boolean;
-  }
-
-  // Inside MonacoEditor component, add new state
-  const [decorations, setDecorations] = useState<string[]>([]);
-  const [liveValues, setLiveValues] = useState<LiveValueDecoration[]>([]);
-  const decorationsRef = useRef<LiveValueDecoration[]>([]);
-
   // Fix the decoration setup effect
   useEffect(() => {
     if (monacoRef.current && editorRef.current) {
-      const monaco = monacoRef.current;
-
       // Add CSS for live value decorations
       const styleElement = document.createElement('style');
       styleElement.textContent = `
@@ -2430,14 +2366,16 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           border-radius: 3px !important;
           margin: 0 2px !important;
         }
-        .live-value-badge {
-          background-color: rgba(34, 197, 94, 0.1) !important;
-          color: rgb(34, 197, 94) !important;
-          padding: 0 4px !important;
-          margin-left: 4px !important;
-          font-weight: 500 !important;
+        .live-value-analog {
           border: 1px solid rgba(34, 197, 94, 0.4) !important;
           border-radius: 3px !important;
+          padding: 0 2px !important;
+          margin: 0 2px !important;
+        }
+        .live-value-badge {
+          color: rgb(34, 197, 94) !important;
+          margin-left: 4px !important;
+          font-weight: 500 !important;
         }
       `;
       document.head.appendChild(styleElement);
@@ -2528,7 +2466,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           ),
           options: {
             isWholeLine: false,
-            className: value ? 'live-value-true' : 'live-value-false',
+            inlineClassName: value ? 'live-value-true' : 'live-value-false',
             stickiness:
               monacoRef.current!.editor.TrackedRangeStickiness
                 .NeverGrowsWhenTypingAtEdges,
@@ -2536,26 +2474,41 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           },
         };
       } else {
-        // For analog values, add a badge after the variable name
-        return {
-          range: new monacoRef.current!.Range(
-            variable.line,
-            variable.column,
-            variable.line,
-            endColumn
-          ),
-          options: {
-            isWholeLine: false,
-            after: {
-              content: ` ${value}`,
-              className: 'live-value-badge',
+        // For analog values, create a decoration that includes both the variable and its value
+        return [
+          {
+            range: new monacoRef.current!.Range(
+              variable.line,
+              variable.column,
+              variable.line,
+              endColumn
+            ),
+            options: {
+              isWholeLine: false,
+              inlineClassName: 'live-value-analog',
+              stickiness:
+                monacoRef.current!.editor.TrackedRangeStickiness
+                  .NeverGrowsWhenTypingAtEdges,
             },
-            stickiness:
-              monacoRef.current!.editor.TrackedRangeStickiness
-                .NeverGrowsWhenTypingAtEdges,
-            hoverMessage: { value: `Current value: ${value}` },
           },
-        };
+          {
+            range: new monacoRef.current!.Range(
+              variable.line,
+              endColumn,
+              variable.line,
+              endColumn + 1
+            ),
+            options: {
+              after: {
+                content: `= ${value}`,
+                className: 'live-value-badge',
+              },
+              stickiness:
+                monacoRef.current!.editor.TrackedRangeStickiness
+                  .NeverGrowsWhenTypingAtEdges,
+            },
+          },
+        ];
       }
     };
 
@@ -2589,21 +2542,12 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           if (previousValuesRef.current[varPath] !== value) {
             hasChanges = true;
 
-            // Create decoration based on value type
-            const decoration = createDecoration(variable, value);
-            newDecorations.push(decoration);
-
-            // Update decoration map
-            if (!decorationMap.has(varPath)) {
-              decorationMap.set(varPath, { id: [], value });
+            // Get decorations for this variable
+            const decorations = createDecoration(variable, value);
+            if (Array.isArray(decorations)) {
+              newDecorations.push(...decorations);
             } else {
-              decorationMap.get(varPath)!.value = value;
-            }
-          } else {
-            // Reuse existing decoration
-            const existing = decorationMap.get(varPath);
-            if (existing) {
-              newDecorations.push(createDecoration(variable, existing.value));
+              newDecorations.push(decorations);
             }
           }
         }
@@ -2616,15 +2560,6 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           newDecorations
         );
         previousValuesRef.current = updatedValues;
-
-        // Update decoration map with new IDs
-        Array.from(decorationMap.entries()).forEach(
-          ([varPath, data], index) => {
-            if (currentDecorationIds[index]) {
-              data.id = [currentDecorationIds[index]];
-            }
-          }
-        );
       }
     };
 
@@ -2643,6 +2578,129 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       }
     };
   }, [activeFile, isConnected, wsVariables, monacoRef]);
+
+  // Update the CSS styles for analog values using sibling approach
+  useEffect(() => {
+    if (monacoRef.current && editorRef.current) {
+      const monaco = monacoRef.current;
+
+      // Add CSS for live value decorations
+      const styleElement = document.createElement('style');
+      styleElement.textContent = `
+        .live-value-true { /* Boolean true */
+          background-color: rgba(34, 197, 94, 0.1) !important;
+          border: 1px solid rgba(34, 197, 94, 0.4) !important;
+          border-radius: 3px !important;
+          margin: 0 2px !important;
+          box-sizing: border-box !important;
+        }
+        .live-value-false { /* Boolean false */
+          border: 1px solid rgba(34, 197, 94, 0.4) !important;
+          border-radius: 3px !important;
+          margin: 0 2px !important;
+          box-sizing: border-box !important;
+        }
+
+        /* Analog variable name span */
+        .live-value-analog {
+          display: inline-block !important;
+          border: 1px solid rgba(34, 197, 94, 0.4) !important;
+          border-right: none !important;
+          border-radius: 3px 0 0 3px !important;
+          padding: 0 2px 0 3px !important;
+          margin-right: 0 !important;
+          vertical-align: middle !important;
+          box-sizing: border-box !important;
+          background-color: rgba(34, 197, 94, 0.02) !important;
+        }
+
+        .live-value-analog + span {
+          display: inline-block !important;
+          color: rgb(34, 197, 94) !important;
+          border: 1px solid rgba(34, 197, 94, 0.4) !important;
+          border-left: none !important;
+          border-right: none !important;
+          border-radius: 0 3px 3px 0 !important;
+          padding: 0 4px 0 2px !important;
+          margin-left: -1px !important; /* Overlap border */
+          font-weight: 500 !important;
+          vertical-align: middle !important;
+          box-sizing: border-box !important;
+          background-color: rgba(34, 197, 94, 0.05) !important;
+        }
+
+        /* Analog value badge span (select sibling) */
+        .live-value-analog + span + span {
+          display: inline-block !important;
+          color: rgb(34, 197, 94) !important;
+          border: 1px solid rgba(34, 197, 94, 0.4) !important;
+          border-left: none !important;
+          border-radius: 0 3px 3px 0 !important;
+          padding: 0 4px 0 2px !important;
+          margin-left: -1px !important; /* Overlap border */
+          font-weight: 500 !important;
+          vertical-align: middle !important;
+          box-sizing: border-box !important;
+          background-color: rgba(34, 197, 94, 0.05) !important;
+        }
+      `;
+      document.head.appendChild(styleElement);
+
+      return () => {
+        styleElement.remove();
+      };
+    }
+  }, []);
+
+  // Update the createDecoration function to use the reverted class names
+  const createDecoration = (
+    variable: { name: string; line: number; column: number },
+    value: any
+  ) => {
+    const isBoolean = typeof value === 'boolean';
+    const endColumn = variable.column + variable.name.length;
+
+    if (isBoolean) {
+      return {
+        range: new monacoRef.current!.Range(
+          variable.line,
+          variable.column,
+          variable.line,
+          endColumn
+        ),
+        options: {
+          isWholeLine: false,
+          inlineClassName: value ? 'live-value-true' : 'live-value-false',
+          stickiness:
+            monacoRef.current!.editor.TrackedRangeStickiness
+              .NeverGrowsWhenTypingAtEdges,
+          hoverMessage: { value: `Current value: ${value}` },
+        },
+      };
+    } else {
+      // For analog values, apply class to name span and badge after it
+      return {
+        range: new monacoRef.current!.Range(
+          variable.line,
+          variable.column,
+          variable.line,
+          endColumn
+        ),
+        options: {
+          isWholeLine: false,
+          inlineClassName: 'live-value-analog', // Reverted class name
+          after: {
+            content: ` = ${value}`,
+            inlineClassName: 'live-value-analog-badge', // Class for the badge span
+          },
+          stickiness:
+            monacoRef.current!.editor.TrackedRangeStickiness
+              .NeverGrowsWhenTypingAtEdges,
+          hoverMessage: { value: `Current value: ${value}` },
+        },
+      };
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
