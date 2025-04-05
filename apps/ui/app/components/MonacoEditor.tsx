@@ -30,6 +30,7 @@ import {
 } from './CompilePanel';
 import { useWebSocket } from './context/WebSocketContext';
 import EditorTab, { TabType } from './EditorTab'; // Import EditorTab component
+import './MonacoEditor.css'; // Import the CSS file with live value styles
 import NewFileDialog from './NewFileDialog';
 import ProjectSidebar from './ProjectSidebar/ProjectSidebar';
 import StatusScreen from './StatusScreen';
@@ -2351,39 +2352,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
   // Fix the decoration setup effect
   useEffect(() => {
-    if (monacoRef.current && editorRef.current) {
-      // Add CSS for live value decorations
-      const styleElement = document.createElement('style');
-      styleElement.textContent = `
-        .live-value-true {
-          background-color: rgba(34, 197, 94, 0.1) !important;
-          border: 1px solid rgba(34, 197, 94, 0.4) !important;
-          border-radius: 3px !important;
-          margin: 0 2px !important;
-        }
-        .live-value-false {
-          border: 1px solid rgba(34, 197, 94, 0.4) !important;
-          border-radius: 3px !important;
-          margin: 0 2px !important;
-        }
-        .live-value-analog {
-          border: 1px solid rgba(34, 197, 94, 0.4) !important;
-          border-radius: 3px !important;
-          padding: 0 2px !important;
-          margin: 0 2px !important;
-        }
-        .live-value-badge {
-          color: rgb(34, 197, 94) !important;
-          margin-left: 4px !important;
-          font-weight: 500 !important;
-        }
-      `;
-      document.head.appendChild(styleElement);
-
-      return () => {
-        styleElement.remove();
-      };
-    }
+    // The CSS is now imported directly via the CSS file
+    // No need to dynamically inject styles
   }, []);
 
   // Add function to extract variables from code
@@ -2434,6 +2404,11 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     // Track decorations by variable name for efficient updates
     const decorationMap = new Map<string, { id: string[]; value: any }>();
 
+    // Only process .st files - skip any files from Control folder or non-ST files
+    if (!activeFile.name.toLowerCase().endsWith('.st')) {
+      return; // Skip decoration and subscription for non-ST files
+    }
+
     // Extract variables from current file
     const code = model.getValue();
     const variables = extractVariablesFromCode(code);
@@ -2474,41 +2449,27 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           },
         };
       } else {
-        // For analog values, create a decoration that includes both the variable and its value
-        return [
-          {
-            range: new monacoRef.current!.Range(
-              variable.line,
-              variable.column,
-              variable.line,
-              endColumn
-            ),
-            options: {
-              isWholeLine: false,
-              inlineClassName: 'live-value-analog',
-              stickiness:
-                monacoRef.current!.editor.TrackedRangeStickiness
-                  .NeverGrowsWhenTypingAtEdges,
+        // For analog values, just highlight the variable name with a badge that shows the value
+        return {
+          range: new monacoRef.current!.Range(
+            variable.line,
+            variable.column,
+            variable.line,
+            endColumn
+          ),
+          options: {
+            isWholeLine: false,
+            inlineClassName: 'live-value-analog',
+            after: {
+              content: ` = ${value}`,
+              inlineClassName: 'live-value-badge',
             },
+            stickiness:
+              monacoRef.current!.editor.TrackedRangeStickiness
+                .NeverGrowsWhenTypingAtEdges,
+            hoverMessage: { value: `Current value: ${value}` },
           },
-          {
-            range: new monacoRef.current!.Range(
-              variable.line,
-              endColumn,
-              variable.line,
-              endColumn + 1
-            ),
-            options: {
-              after: {
-                content: `= ${value}`,
-                className: 'live-value-badge',
-              },
-              stickiness:
-                monacoRef.current!.editor.TrackedRangeStickiness
-                  .NeverGrowsWhenTypingAtEdges,
-            },
-          },
-        ];
+        };
       }
     };
 
@@ -2542,13 +2503,9 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           if (previousValuesRef.current[varPath] !== value) {
             hasChanges = true;
 
-            // Get decorations for this variable
-            const decorations = createDecoration(variable, value);
-            if (Array.isArray(decorations)) {
-              newDecorations.push(...decorations);
-            } else {
-              newDecorations.push(decorations);
-            }
+            // Get decoration for this variable (now always returns a single object)
+            const decoration = createDecoration(variable, value);
+            newDecorations.push(decoration);
           }
         }
       });
@@ -2577,130 +2534,14 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
         previousValuesRef.current = {};
       }
     };
-  }, [activeFile, isConnected, wsVariables, monacoRef]);
-
-  // Update the CSS styles for analog values using sibling approach
-  useEffect(() => {
-    if (monacoRef.current && editorRef.current) {
-      const monaco = monacoRef.current;
-
-      // Add CSS for live value decorations
-      const styleElement = document.createElement('style');
-      styleElement.textContent = `
-        .live-value-true { /* Boolean true */
-          background-color: rgba(34, 197, 94, 0.1) !important;
-          border: 1px solid rgba(34, 197, 94, 0.4) !important;
-          border-radius: 3px !important;
-          margin: 0 2px !important;
-          box-sizing: border-box !important;
-        }
-        .live-value-false { /* Boolean false */
-          border: 1px solid rgba(34, 197, 94, 0.4) !important;
-          border-radius: 3px !important;
-          margin: 0 2px !important;
-          box-sizing: border-box !important;
-        }
-
-        /* Analog variable name span */
-        .live-value-analog {
-          display: inline-block !important;
-          border: 1px solid rgba(34, 197, 94, 0.4) !important;
-          border-right: none !important;
-          border-radius: 3px 0 0 3px !important;
-          padding: 0 2px 0 3px !important;
-          margin-right: 0 !important;
-          vertical-align: middle !important;
-          box-sizing: border-box !important;
-          background-color: rgba(34, 197, 94, 0.02) !important;
-        }
-
-        .live-value-analog + span {
-          display: inline-block !important;
-          color: rgb(34, 197, 94) !important;
-          border: 1px solid rgba(34, 197, 94, 0.4) !important;
-          border-left: none !important;
-          border-right: none !important;
-          border-radius: 0 3px 3px 0 !important;
-          padding: 0 4px 0 2px !important;
-          margin-left: -1px !important; /* Overlap border */
-          font-weight: 500 !important;
-          vertical-align: middle !important;
-          box-sizing: border-box !important;
-          background-color: rgba(34, 197, 94, 0.05) !important;
-        }
-
-        /* Analog value badge span (select sibling) */
-        .live-value-analog + span + span {
-          display: inline-block !important;
-          color: rgb(34, 197, 94) !important;
-          border: 1px solid rgba(34, 197, 94, 0.4) !important;
-          border-left: none !important;
-          border-radius: 0 3px 3px 0 !important;
-          padding: 0 4px 0 2px !important;
-          margin-left: -1px !important; /* Overlap border */
-          font-weight: 500 !important;
-          vertical-align: middle !important;
-          box-sizing: border-box !important;
-          background-color: rgba(34, 197, 94, 0.05) !important;
-        }
-      `;
-      document.head.appendChild(styleElement);
-
-      return () => {
-        styleElement.remove();
-      };
-    }
-  }, []);
-
-  // Update the createDecoration function to use the reverted class names
-  const createDecoration = (
-    variable: { name: string; line: number; column: number },
-    value: any
-  ) => {
-    const isBoolean = typeof value === 'boolean';
-    const endColumn = variable.column + variable.name.length;
-
-    if (isBoolean) {
-      return {
-        range: new monacoRef.current!.Range(
-          variable.line,
-          variable.column,
-          variable.line,
-          endColumn
-        ),
-        options: {
-          isWholeLine: false,
-          inlineClassName: value ? 'live-value-true' : 'live-value-false',
-          stickiness:
-            monacoRef.current!.editor.TrackedRangeStickiness
-              .NeverGrowsWhenTypingAtEdges,
-          hoverMessage: { value: `Current value: ${value}` },
-        },
-      };
-    } else {
-      // For analog values, apply class to name span and badge after it
-      return {
-        range: new monacoRef.current!.Range(
-          variable.line,
-          variable.column,
-          variable.line,
-          endColumn
-        ),
-        options: {
-          isWholeLine: false,
-          inlineClassName: 'live-value-analog', // Reverted class name
-          after: {
-            content: ` = ${value}`,
-            inlineClassName: 'live-value-analog-badge', // Class for the badge span
-          },
-          stickiness:
-            monacoRef.current!.editor.TrackedRangeStickiness
-              .NeverGrowsWhenTypingAtEdges,
-          hoverMessage: { value: `Current value: ${value}` },
-        },
-      };
-    }
-  };
+  }, [
+    activeFile,
+    editorRef,
+    isConnected,
+    monacoRef,
+    subscribeToVariables,
+    wsVariables,
+  ]);
 
   return (
     <div className="flex flex-col h-full">
