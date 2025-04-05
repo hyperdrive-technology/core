@@ -59,6 +59,7 @@ interface WebSocketContextType {
   isControllerConnecting: (controllerId: string) => boolean;
   subscribeToVariables: (variableNames: string[], filePath: string) => void;
   setTrendTabOpen: (isOpen: boolean) => void;
+  activeSubscriptions: Map<string, Set<string>>;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -85,9 +86,9 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [selectedVariable, setSelectedVariable] = useState<string | null>(null);
   const [controllers, setControllers] = useState<Controller[]>([]);
-  const [subscribedVariables, setSubscribedVariables] = useState<Set<string>>(
-    new Set()
-  );
+  const [activeSubscriptions, setActiveSubscriptions] = useState<
+    Map<string, Set<string>>
+  >(new Map());
   const [connectingControllers, setConnectingControllers] = useState<
     Set<string>
   >(new Set());
@@ -99,6 +100,9 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   const hasShownAutoConnectToast = useRef<boolean>(false);
   // Flag to track if there are open trend tabs requiring variable data
   const hasTrendTabsOpen = useRef<boolean>(false);
+
+  // Cache for tracking recent subscriptions to avoid duplicates
+  const subscriptionCacheRef = useRef<Record<string, number>>({});
 
   // Initialize the default controller - REMOVED
   /*
@@ -686,16 +690,51 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   // Wrap subscribeToVariables in useCallback
   const subscribeToVariables = useCallback(
     (variableNames: string[], filePath: string) => {
+      if (!variableNames.length) {
+        return;
+      }
+
+      // Check for existing subscriptions to find only new variables
+      const existingVars = activeSubscriptions.get(filePath) || new Set();
+      const newVars = variableNames.filter((name) => !existingVars.has(name));
+
+      // If all variables are already subscribed, skip
+      if (newVars.length === 0 && existingVars.size > 0) {
+        console.log(
+          `All ${variableNames.length} variables already subscribed for ${filePath}`
+        );
+        return;
+      }
+
+      // Create a cache key for this specific subscription request
+      const cacheKey = `${filePath}:${variableNames.sort().join(',')}`;
+
+      const now = Date.now();
+      const lastSubscribed = subscriptionCacheRef.current[cacheKey] || 0;
+
+      // Only allow the same subscription once per 5 seconds
+      if (now - lastSubscribed < 5000) {
+        console.log(
+          `Skipping duplicate subscription to ${filePath} (throttled)`
+        );
+        return;
+      }
+
+      // Update the subscription timestamp
+      subscriptionCacheRef.current[cacheKey] = now;
+
+      // Update active subscriptions state
+      setActiveSubscriptions((prev) => {
+        const updated = new Map(prev);
+        const currentSet = updated.get(filePath) || new Set();
+        variableNames.forEach((name) => currentSet.add(name));
+        updated.set(filePath, currentSet);
+        return updated;
+      });
+
       console.log(
         `Subscribing to variables: ${variableNames.join(', ')} from ${filePath}`
       );
-
-      // Add to the global set of subscribed variables
-      setSubscribedVariables((prev) => {
-        const newSet = new Set(prev);
-        variableNames.forEach((name) => newSet.add(name));
-        return newSet;
-      });
 
       // Send subscription message to each connected controller
       controllers.forEach((controller) => {
@@ -720,7 +759,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
         }
       });
     },
-    [controllers] // Dependency: only recreate if controllers array changes
+    [controllers, activeSubscriptions] // Dependencies include activeSubscriptions
   );
 
   // Check if a controller is currently connecting
@@ -754,6 +793,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     isControllerConnecting,
     subscribeToVariables, // Use the memoized function
     setTrendTabOpen,
+    activeSubscriptions, // Expose active subscriptions
   };
 
   return (
