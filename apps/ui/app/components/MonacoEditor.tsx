@@ -2398,7 +2398,6 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     { type: string; line?: number; column?: number; details?: any }
   > => {
     if (!ast || !ast.programs || !ast.programs.length) {
-      console.warn('No valid AST or programs found for variable extraction');
       return new Map();
     }
 
@@ -2449,6 +2448,65 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       'F_TRIG',
     ];
     return complexTypes.includes(typeName) || typeName.startsWith('STRUCT');
+  };
+
+  // Get the member type for a complex variable
+  const getComplexMemberType = (
+    complexType: string,
+    memberName: string
+  ): string => {
+    // Define known member types for common function blocks
+    if (
+      complexType === 'TON' ||
+      complexType === 'TOF' ||
+      complexType === 'TP'
+    ) {
+      switch (memberName.toLowerCase()) {
+        case 'in':
+          return 'BOOL';
+        case 'pt':
+          return 'TIME';
+        case 'et':
+          return 'TIME';
+        case 'q':
+          return 'BOOL';
+        default:
+          return 'UNKNOWN';
+      }
+    }
+    if (
+      complexType === 'CTU' ||
+      complexType === 'CTD' ||
+      complexType === 'CTUD'
+    ) {
+      switch (memberName.toLowerCase()) {
+        case 'cu':
+        case 'cd':
+          return 'BOOL';
+        case 'pv':
+        case 'cv':
+          return 'INT';
+        case 'q':
+        case 'qu':
+        case 'qd':
+          return 'BOOL';
+        default:
+          return 'UNKNOWN';
+      }
+    }
+    if (complexType === 'R_TRIG' || complexType === 'F_TRIG') {
+      switch (memberName.toLowerCase()) {
+        case 'clk':
+          return 'BOOL';
+        case 'q':
+          return 'BOOL';
+        default:
+          return 'UNKNOWN';
+      }
+    }
+
+    // For unknown complex types, return a generic type
+    return 'UNKNOWN';
   };
 
   // Helper to format TIME values properly
@@ -2558,7 +2616,6 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     const variableMap = extractVariablesFromAST(latestCompilationResult.ast);
 
     if (variableMap.size === 0) {
-      console.warn('No variables found in AST for live value display');
       return;
     }
 
@@ -2568,13 +2625,16 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
     // Get all variable names to subscribe
     const varNames = Array.from(variableMap.keys());
+
+    // Use fully qualified paths for subscription
     const varPaths = varNames.map((v) => `${namespace}.${v}`);
 
     if (varPaths.length > 0) {
+      // Send fully qualified names to subscribe
       subscribeToVariables(varPaths, namespace);
     }
 
-    // Find variable positions in the code
+    // Get the code content for comment and variable detection
     const code = model.getValue();
     const lines = code.split('\n');
 
@@ -2652,9 +2712,6 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       }
     });
 
-    // Create a map to track variable positions
-    const varPositions = new Map<string, { line: number; column: number }[]>();
-
     // Helper function to check if position is inside a comment
     const isInComment = (line: number, column: number): boolean => {
       return commentRanges.some((range) => {
@@ -2665,14 +2722,27 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       });
     };
 
+    // Create maps to track variable positions
+    const varPositions = new Map<string, { line: number; column: number }[]>();
+    const memberAccessPositions = new Map<
+      string,
+      { line: number; column: number; fullLength: number }[]
+    >();
+
     // Find all occurrences of each variable in the code
     varNames.forEach((varName) => {
       const positions: { line: number; column: number }[] = [];
-      const regex = new RegExp(`\\b${varName}\\b`, 'g');
+
+      // Two different regex patterns:
+      // 1. Standalone variable: \bvarName\b(?!\.)
+      // 2. Variable with member access: \bvarName\.\w+\b
+
+      // First find standalone variables (not followed by a dot)
+      const standaloneRegex = new RegExp(`\\b${varName}\\b(?!\\.)`, 'g');
 
       lines.forEach((line, lineIndex) => {
         let match;
-        while ((match = regex.exec(line)) !== null) {
+        while ((match = standaloneRegex.exec(line)) !== null) {
           // Skip if match is inside a comment
           if (!isInComment(lineIndex, match.index)) {
             positions.push({
@@ -2682,6 +2752,33 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           }
         }
       });
+
+      // Now find member access patterns for complex variables
+      if (isComplexType(variableMap.get(varName)?.type || '')) {
+        const memberAccessRegex = new RegExp(`\\b${varName}\\.(\\w+)\\b`, 'g');
+
+        lines.forEach((line, lineIndex) => {
+          let match;
+          while ((match = memberAccessRegex.exec(line)) !== null) {
+            // Skip if match is inside a comment
+            if (!isInComment(lineIndex, match.index)) {
+              const memberName = match[1];
+              const fullAccessKey = `${varName}.${memberName}`;
+              const accessPos = {
+                line: lineIndex + 1,
+                column: match.index + 1,
+                fullLength: match[0].length,
+              };
+
+              // Store in the member access map
+              if (!memberAccessPositions.has(fullAccessKey)) {
+                memberAccessPositions.set(fullAccessKey, []);
+              }
+              memberAccessPositions.get(fullAccessKey)?.push(accessPos);
+            }
+          }
+        });
+      }
 
       if (positions.length > 0) {
         varPositions.set(varName, positions);
@@ -2693,10 +2790,11 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       varName: string,
       position: { line: number; column: number },
       value: any,
-      varType: string
+      varType: string,
+      fullLength?: number
     ) => {
       const isBoolean = typeof value === 'boolean';
-      const endColumn = position.column + varName.length;
+      const endColumn = position.column + (fullLength || varName.length);
       const isComplex = isComplexType(varType);
       const isTimeType = varType === 'TIME';
 
@@ -2801,46 +2899,155 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       const newDecorations: any[] = [];
       const updatedValues: Record<string, any> = {};
 
-      // Iterate through all variables we found in the AST
+      // Track member access values separately
+      const memberValueMap = new Map<string, any>();
+
+      // First pass - collect all values from WebSocket
       varNames.forEach((varName) => {
         const varPath = `${namespace}.${varName}`;
         const varInfo = variableMap.get(varName);
         let value: any = undefined;
+        let found = false;
 
-        // Skip if we don't have position info for this variable
-        if (!varPositions.has(varName)) return;
-
-        // Find value in WebSocket variables
+        // Find value in WebSocket variables - search all connected controllers
         for (const [path, vars] of Object.entries(wsVariables)) {
           if (path.includes(`:${namespace}`)) {
-            const found = (vars as any[]).find((v) => v.Name === varPath);
-            if (found) {
-              value = found.Value;
+            // Try exact match first (with namespace)
+            const foundVar = (vars as any[]).find((v) => v.Name === varPath);
+            if (foundVar) {
+              value = foundVar.Value;
+              found = true;
+              break;
+            }
+
+            // Try alternate format (without namespace)
+            const shortVarName = varName;
+            const foundByShortName = (vars as any[]).find(
+              (v) =>
+                v.Name.endsWith(`.${shortVarName}`) || v.Name === shortVarName
+            );
+            if (foundByShortName) {
+              value = foundByShortName.Value;
+              found = true;
               break;
             }
           }
         }
 
-        if (value !== undefined) {
+        // Store the value if found
+        if (found || value !== undefined) {
           updatedValues[varPath] = value;
 
-          // Check if value has changed
-          if (previousValuesRef.current[varPath] !== value) {
-            hasChanges = true;
+          // If this is a complex variable, also look for its member values directly
+          // Some PLCs expose the member values as separate variables
+          if (isComplexType(varInfo?.type || '')) {
+            Array.from(memberAccessPositions.keys()).forEach((accessKey) => {
+              if (accessKey.startsWith(`${varName}.`)) {
+                const memberName = accessKey.split('.')[1];
 
-            // Create decorations for all occurrences of this variable
-            const positions = varPositions.get(varName) || [];
+                // First check if this member has a direct value in the WebSocket data
+                const memberPath = `${namespace}.${accessKey}`;
+                let memberValue: any = undefined;
+                let memberFound = false;
 
-            positions.forEach((position) => {
-              const decoration = createDecoration(
-                varName,
-                position,
-                value,
-                varInfo?.type || 'UNKNOWN'
-              );
-              newDecorations.push(decoration);
+                // Look for direct WebSocket variables for the member
+                for (const [path, vars] of Object.entries(wsVariables)) {
+                  if (path.includes(`:${namespace}`)) {
+                    // Try full path match
+                    const foundMember = (vars as any[]).find(
+                      (v) => v.Name === memberPath
+                    );
+                    if (foundMember) {
+                      memberValue = foundMember.Value;
+                      memberFound = true;
+                      break;
+                    }
+
+                    // Try short name match
+                    const foundShortMember = (vars as any[]).find(
+                      (v) =>
+                        v.Name.endsWith(`.${accessKey}`) || v.Name === accessKey
+                    );
+                    if (foundShortMember) {
+                      memberValue = foundShortMember.Value;
+                      memberFound = true;
+                      break;
+                    }
+                  }
+                }
+
+                // If not found as a direct variable, extract from the parent complex variable
+                if (!memberFound && value && typeof value === 'object') {
+                  memberValue = value[memberName];
+                }
+
+                // Store the member value if found
+                if (memberValue !== undefined) {
+                  memberValueMap.set(accessKey, memberValue);
+                }
+              }
             });
           }
+        }
+      });
+
+      // Second pass - create decorations for variables
+      varNames.forEach((varName) => {
+        const varPath = `${namespace}.${varName}`;
+        const varInfo = variableMap.get(varName);
+        const value = updatedValues[varPath];
+
+        // Skip if no value or no position info
+        if (value === undefined || !varPositions.has(varName)) return;
+
+        // Check if value has changed
+        if (previousValuesRef.current[varPath] !== value) {
+          hasChanges = true;
+
+          // Create decorations for the base variable
+          const positions = varPositions.get(varName) || [];
+
+          positions.forEach((position) => {
+            const decoration = createDecoration(
+              varName,
+              position,
+              value,
+              varInfo?.type || 'UNKNOWN'
+            );
+            newDecorations.push(decoration);
+          });
+        }
+      });
+
+      // Third pass - create decorations for member accesses
+      memberValueMap.forEach((memberValue, accessKey) => {
+        const [varName, memberName] = accessKey.split('.');
+        const varInfo = variableMap.get(varName);
+        const memberType = getComplexMemberType(
+          varInfo?.type || '',
+          memberName
+        );
+        const positions = memberAccessPositions.get(accessKey) || [];
+
+        // Create a unique key for tracking changes
+        const memberValueKey = `${namespace}.${accessKey}`;
+
+        // Check if the value has changed
+        if (previousValuesRef.current[memberValueKey] !== memberValue) {
+          hasChanges = true;
+          previousValuesRef.current[memberValueKey] = memberValue;
+
+          positions.forEach((pos) => {
+            // Create a decoration appropriate for this member type
+            const decoration = createDecoration(
+              accessKey,
+              pos,
+              memberValue,
+              memberType,
+              pos.fullLength
+            );
+            newDecorations.push(decoration);
+          });
         }
       });
 
@@ -2850,7 +3057,10 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           currentDecorationIds,
           newDecorations
         );
-        previousValuesRef.current = updatedValues;
+        previousValuesRef.current = {
+          ...previousValuesRef.current,
+          ...updatedValues,
+        };
       }
     };
 
@@ -2875,7 +3085,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     monacoRef,
     subscribeToVariables,
     wsVariables,
-    latestCompilationResult, // Add dependency on compilation result for AST access
+    latestCompilationResult,
   ]);
 
   return (
