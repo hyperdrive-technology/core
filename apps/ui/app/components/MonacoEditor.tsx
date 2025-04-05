@@ -2356,28 +2356,172 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     // No need to dynamically inject styles
   }, []);
 
-  // Add function to extract variables from code
-  const extractVariablesFromCode = (
-    code: string
-  ): { name: string; line: number; column: number }[] => {
-    const variables: { name: string; line: number; column: number }[] = [];
-    const lines = code.split('\n');
+  // Define interfaces for AST types
+  interface ASTNode {
+    $type: string;
+    [key: string]: any;
+  }
 
-    // Simple regex to match variable declarations
-    const varDeclRegex = /\b([A-Za-z_][A-Za-z0-9_]*)\s*:/g;
+  interface VariableDeclAST extends ASTNode {
+    name: string;
+    type: SimpleTypeAST | any; // Could be other type structures
+    initialValue?: any;
+  }
 
-    lines.forEach((line, lineIndex) => {
-      let match;
-      while ((match = varDeclRegex.exec(line)) !== null) {
-        variables.push({
-          name: match[1],
-          line: lineIndex + 1,
-          column: match.index + 1,
+  interface SimpleTypeAST extends ASTNode {
+    name: string; // INT, BOOL, TON, etc.
+  }
+
+  interface VarDeclarationAST extends ASTNode {
+    variables: VariableDeclAST[];
+  }
+
+  interface ProgramDeclAST extends ASTNode {
+    name: string;
+    varDeclarations: VarDeclarationAST[];
+    body: any;
+  }
+
+  interface ProgramAST extends ASTNode {
+    programs: ProgramDeclAST[];
+    functionBlocks: any[];
+    functions: any[];
+    structTypes: any[];
+    enumTypes: any[];
+  }
+
+  // Function to extract variables from AST
+  const extractVariablesFromAST = (
+    ast: any
+  ): Map<
+    string,
+    { type: string; line?: number; column?: number; details?: any }
+  > => {
+    if (!ast || !ast.programs || !ast.programs.length) {
+      console.warn('No valid AST or programs found for variable extraction');
+      return new Map();
+    }
+
+    const variableMap = new Map<
+      string,
+      { type: string; line?: number; column?: number; details?: any }
+    >();
+
+    // Process all programs in the AST
+    ast.programs.forEach((program: ProgramDeclAST) => {
+      if (!program.varDeclarations) return;
+
+      // Process all variable declarations in the program
+      program.varDeclarations.forEach((varDecl: VarDeclarationAST) => {
+        if (!varDecl.variables) return;
+
+        // Process each variable
+        varDecl.variables.forEach((variable: VariableDeclAST) => {
+          const typeName =
+            variable.type && variable.type.name
+              ? variable.type.name
+              : variable.type && variable.type.$type
+              ? variable.type.$type
+              : 'UNKNOWN';
+
+          variableMap.set(variable.name, {
+            type: typeName,
+            details: variable, // Store the full variable declaration for access to type details
+          });
         });
-      }
+      });
     });
 
-    return variables;
+    return variableMap;
+  };
+
+  // Function to determine if a type is a complex type (TON, struct, etc)
+  const isComplexType = (typeName: string): boolean => {
+    // Function blocks and known complex types
+    const complexTypes = [
+      'TON',
+      'TOF',
+      'TP',
+      'CTU',
+      'CTD',
+      'CTUD',
+      'R_TRIG',
+      'F_TRIG',
+    ];
+    return complexTypes.includes(typeName) || typeName.startsWith('STRUCT');
+  };
+
+  // Helper to format TIME values properly
+  const formatTimeValue = (value: any): string => {
+    if (value === undefined || value === null) {
+      return 'T#0s';
+    }
+
+    // If it's already a string with T# format, return it
+    if (typeof value === 'string' && value.startsWith('T#')) {
+      return value;
+    }
+
+    // If it's a number (milliseconds), format it properly
+    if (typeof value === 'number') {
+      if (value === 0) return 'T#0s';
+
+      const ms = value % 1000;
+      const seconds = Math.floor(value / 1000) % 60;
+      const minutes = Math.floor(value / 60000) % 60;
+      const hours = Math.floor(value / 3600000);
+
+      let result = 'T#';
+      if (hours > 0) result += `${hours}h`;
+      if (minutes > 0) result += `${minutes}m`;
+      if (seconds > 0) result += `${seconds}s`;
+      if (ms > 0) result += `${ms}ms`;
+
+      return result;
+    }
+
+    return 'T#0s';
+  };
+
+  // Helper to format complex type values for hover display
+  const formatComplexTypeValue = (
+    varName: string,
+    typeName: string,
+    value: any
+  ): string => {
+    let result = `<div class="monaco-hover-content"><strong>${varName}: ${typeName}</strong>`;
+
+    // Handle specific complex types
+    if (typeName === 'TON') {
+      result += `<hr/>
+        <div>IN: ${value?.IN !== undefined ? value.IN : 'N/A'}</div>
+        <div>PT: ${
+          value?.PT !== undefined ? formatTimeValue(value.PT) : 'N/A'
+        }</div>
+        <div>ET: ${
+          value?.ET !== undefined ? formatTimeValue(value.ET) : 'N/A'
+        }</div>
+        <div>Q: ${value?.Q !== undefined ? value.Q : 'N/A'}</div>`;
+    } else if (typeName === 'CTU') {
+      result += `<hr/>
+        <div>CU: ${value?.CU !== undefined ? value.CU : 'N/A'}</div>
+        <div>PV: ${value?.PV !== undefined ? value.PV : 'N/A'}</div>
+        <div>Q: ${value?.Q !== undefined ? value.Q : 'N/A'}</div>
+        <div>CV: ${value?.CV !== undefined ? value.CV : 'N/A'}</div>`;
+    } else {
+      // Generic handling for other complex types
+      result += '<hr/>';
+      if (value && typeof value === 'object') {
+        Object.entries(value).forEach(([key, val]) => {
+          result += `<div>${key}: ${val}</div>`;
+        });
+      } else {
+        result += `<div>Value: ${value !== undefined ? value : 'N/A'}</div>`;
+      }
+    }
+
+    result += '</div>';
+    return result;
   };
 
   // Add a ref to track previous values to avoid unnecessary updates
@@ -2389,7 +2533,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       !editorRef.current ||
       !activeFile ||
       !isConnected ||
-      !monacoRef.current
+      !monacoRef.current ||
+      !latestCompilationResult?.ast
     ) {
       return;
     }
@@ -2409,34 +2554,208 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       return; // Skip decoration and subscription for non-ST files
     }
 
-    // Extract variables from current file
-    const code = model.getValue();
-    const variables = extractVariablesFromCode(code);
+    // Extract variables from AST instead of regex
+    const variableMap = extractVariablesFromAST(latestCompilationResult.ast);
+
+    if (variableMap.size === 0) {
+      console.warn('No variables found in AST for live value display');
+      return;
+    }
 
     // Get namespace from file name
     const fileName = activeFile.name.replace(/\.(st|iec)$/, '');
     const namespace = `${fileName}-st`;
 
-    // Subscribe to variables
-    const varPaths = variables.map((v) => `${namespace}.${v.name}`);
+    // Get all variable names to subscribe
+    const varNames = Array.from(variableMap.keys());
+    const varPaths = varNames.map((v) => `${namespace}.${v}`);
+
     if (varPaths.length > 0) {
       subscribeToVariables(varPaths, namespace);
     }
 
+    // Find variable positions in the code
+    const code = model.getValue();
+    const lines = code.split('\n');
+
+    // Find comment ranges to avoid detecting variables in comments
+    const commentRanges: Array<{
+      lineStart: number;
+      colStart: number;
+      lineEnd: number;
+      colEnd: number;
+    }> = [];
+
+    // Track block comment state
+    let inBlockComment = false;
+    let blockCommentStart = { line: 0, col: 0 };
+
+    // Find all comments in the file
+    lines.forEach((line, lineIndex) => {
+      // Skip if entire line is already in a block comment
+      if (inBlockComment) {
+        const endIdx = line.indexOf('*)');
+        if (endIdx !== -1) {
+          // End of block comment found
+          commentRanges.push({
+            lineStart: blockCommentStart.line,
+            colStart: blockCommentStart.col,
+            lineEnd: lineIndex,
+            colEnd: endIdx + 2,
+          });
+          inBlockComment = false;
+        }
+        return; // Skip further processing of this line
+      }
+
+      // Check for line comments
+      const lineCommentIdx = line.indexOf('//');
+
+      // Check for block comment start
+      let blockStartIdx = line.indexOf('(*');
+
+      // Process the line for comments
+      if (lineCommentIdx !== -1) {
+        // If block comment starts after line comment, ignore it
+        if (blockStartIdx !== -1 && blockStartIdx > lineCommentIdx) {
+          blockStartIdx = -1;
+        }
+
+        // Add line comment range
+        if (blockStartIdx === -1 || lineCommentIdx < blockStartIdx) {
+          commentRanges.push({
+            lineStart: lineIndex,
+            colStart: lineCommentIdx,
+            lineEnd: lineIndex,
+            colEnd: line.length,
+          });
+        }
+      }
+
+      // Handle block comments
+      if (blockStartIdx !== -1) {
+        const blockEndIdx = line.indexOf('*)', blockStartIdx + 2);
+
+        if (blockEndIdx !== -1) {
+          // Block comment starts and ends on same line
+          commentRanges.push({
+            lineStart: lineIndex,
+            colStart: blockStartIdx,
+            lineEnd: lineIndex,
+            colEnd: blockEndIdx + 2,
+          });
+        } else {
+          // Block comment starts but doesn't end on this line
+          inBlockComment = true;
+          blockCommentStart = { line: lineIndex, col: blockStartIdx };
+        }
+      }
+    });
+
+    // Create a map to track variable positions
+    const varPositions = new Map<string, { line: number; column: number }[]>();
+
+    // Helper function to check if position is inside a comment
+    const isInComment = (line: number, column: number): boolean => {
+      return commentRanges.some((range) => {
+        if (line < range.lineStart || line > range.lineEnd) return false;
+        if (line === range.lineStart && column < range.colStart) return false;
+        if (line === range.lineEnd && column >= range.colEnd) return false;
+        return true;
+      });
+    };
+
+    // Find all occurrences of each variable in the code
+    varNames.forEach((varName) => {
+      const positions: { line: number; column: number }[] = [];
+      const regex = new RegExp(`\\b${varName}\\b`, 'g');
+
+      lines.forEach((line, lineIndex) => {
+        let match;
+        while ((match = regex.exec(line)) !== null) {
+          // Skip if match is inside a comment
+          if (!isInComment(lineIndex, match.index)) {
+            positions.push({
+              line: lineIndex + 1,
+              column: match.index + 1,
+            });
+          }
+        }
+      });
+
+      if (positions.length > 0) {
+        varPositions.set(varName, positions);
+      }
+    });
+
     // Helper function to create decoration for a variable
     const createDecoration = (
-      variable: { name: string; line: number; column: number },
-      value: any
+      varName: string,
+      position: { line: number; column: number },
+      value: any,
+      varType: string
     ) => {
       const isBoolean = typeof value === 'boolean';
-      const endColumn = variable.column + variable.name.length;
+      const endColumn = position.column + varName.length;
+      const isComplex = isComplexType(varType);
+      const isTimeType = varType === 'TIME';
 
-      if (isBoolean) {
+      // TIME type - format properly
+      if (isTimeType) {
+        const formattedTime = formatTimeValue(value);
         return {
           range: new monacoRef.current!.Range(
-            variable.line,
-            variable.column,
-            variable.line,
+            position.line,
+            position.column,
+            position.line,
+            endColumn
+          ),
+          options: {
+            isWholeLine: false,
+            inlineClassName: 'live-value-analog',
+            after: {
+              content: ` = ${formattedTime}`,
+              inlineClassName: 'live-value-badge',
+            },
+            stickiness:
+              monacoRef.current!.editor.TrackedRangeStickiness
+                .NeverGrowsWhenTypingAtEdges,
+            hoverMessage: {
+              value: `Current value: ${formattedTime} (${varType})`,
+            },
+          },
+        };
+      }
+      // Complex type (TON, STRUCT, etc.) - use hover message
+      else if (isComplex) {
+        return {
+          range: new monacoRef.current!.Range(
+            position.line,
+            position.column,
+            position.line,
+            endColumn
+          ),
+          options: {
+            isWholeLine: false,
+            inlineClassName: 'live-value-complex',
+            stickiness:
+              monacoRef.current!.editor.TrackedRangeStickiness
+                .NeverGrowsWhenTypingAtEdges,
+            hoverMessage: {
+              value: formatComplexTypeValue(varName, varType, value),
+              isTrusted: true,
+              supportHtml: true,
+            },
+          },
+        };
+      }
+      // Boolean value - highlight with color
+      else if (isBoolean) {
+        return {
+          range: new monacoRef.current!.Range(
+            position.line,
+            position.column,
+            position.line,
             endColumn
           ),
           options: {
@@ -2448,13 +2767,14 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
             hoverMessage: { value: `Current value: ${value}` },
           },
         };
-      } else {
-        // For analog values, just highlight the variable name with a badge that shows the value
+      }
+      // For other analog values, show inline badge
+      else {
         return {
           range: new monacoRef.current!.Range(
-            variable.line,
-            variable.column,
-            variable.line,
+            position.line,
+            position.column,
+            position.line,
             endColumn
           ),
           options: {
@@ -2467,7 +2787,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
             stickiness:
               monacoRef.current!.editor.TrackedRangeStickiness
                 .NeverGrowsWhenTypingAtEdges,
-            hoverMessage: { value: `Current value: ${value}` },
+            hoverMessage: { value: `Current value: ${value} (${varType})` },
           },
         };
       }
@@ -2481,9 +2801,14 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       const newDecorations: any[] = [];
       const updatedValues: Record<string, any> = {};
 
-      variables.forEach((variable) => {
-        const varPath = `${namespace}.${variable.name}`;
+      // Iterate through all variables we found in the AST
+      varNames.forEach((varName) => {
+        const varPath = `${namespace}.${varName}`;
+        const varInfo = variableMap.get(varName);
         let value: any = undefined;
+
+        // Skip if we don't have position info for this variable
+        if (!varPositions.has(varName)) return;
 
         // Find value in WebSocket variables
         for (const [path, vars] of Object.entries(wsVariables)) {
@@ -2503,9 +2828,18 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
           if (previousValuesRef.current[varPath] !== value) {
             hasChanges = true;
 
-            // Get decoration for this variable (now always returns a single object)
-            const decoration = createDecoration(variable, value);
-            newDecorations.push(decoration);
+            // Create decorations for all occurrences of this variable
+            const positions = varPositions.get(varName) || [];
+
+            positions.forEach((position) => {
+              const decoration = createDecoration(
+                varName,
+                position,
+                value,
+                varInfo?.type || 'UNKNOWN'
+              );
+              newDecorations.push(decoration);
+            });
           }
         }
       });
@@ -2541,6 +2875,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     monacoRef,
     subscribeToVariables,
     wsVariables,
+    latestCompilationResult, // Add dependency on compilation result for AST access
   ]);
 
   return (
