@@ -1,3 +1,5 @@
+import { createToken } from 'chevrotain';
+
 export const DIRECT_ADDRESS = createToken({
   name: 'DIRECT_ADDRESS',
   pattern: /\%[IMQ][XBW][\d\.]+/,

@@ -14,11 +14,12 @@ export interface ProjectSidebarProps {
   selectedFileId: string | null;
   onAddFile: (parentNode: FileNode | null, isFolder: boolean) => void;
   onDeleteFile: (node: FileNode) => void;
-  onDeploy?: (node: FileNode) => void;
-  onAddController?: () => void;
+  onDeploy: (node: FileNode) => void;
+  onAddController: () => void;
   onOpenVariableMonitor?: (node: FileNode) => void;
-  onOpenTrends?: (node: FileNode) => void;
-  onViewControllerStatus?: (node: FileNode) => void;
+  onOpenTrends: (node: FileNode) => void;
+  onViewControllerStatus: (node: FileNode) => void;
+  onPreviewControl?: (node: FileNode) => void;
 }
 
 const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
@@ -32,6 +33,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   onOpenVariableMonitor,
   onOpenTrends,
   onViewControllerStatus,
+  onPreviewControl,
 }) => {
   // State for the current explorer mode
   const [explorerMode, setExplorerMode] = useState<ExplorerMode>('files');
@@ -83,6 +85,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
             onOpenVariableMonitor={onOpenVariableMonitor}
             onOpenTrends={onOpenTrends}
             onViewControllerStatus={onViewControllerStatus}
+            onPreviewControl={onPreviewControl}
           />
         )}
 

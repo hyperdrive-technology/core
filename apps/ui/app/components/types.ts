@@ -12,11 +12,13 @@ export interface FileNode {
     | 'folder'
     | 'trends'
     | 'status'
-    | 'compile';
+    | 'compile'
+    | 'control';
   metadata?: {
     ip?: string;
     version?: string;
     description?: string;
+    tags?: string[];
     [key: string]: any;
   };
   path?: string; // Add path property which might be needed for some node types

@@ -36,38 +36,6 @@ export function CompilationOutputPanel({
   logs,
   result,
 }: CompilationOutputPanelProps) {
-  const formatASTForDisplay = (ast: any): string[] => {
-    if (!ast) return ['No AST data available'];
-
-    const lines: string[] = [`AST Type: ${ast.type}`];
-
-    // Add program declarations
-    if (ast.programs && ast.programs.length > 0) {
-      lines.push(`Programs (${ast.programs.length}):`);
-      ast.programs.forEach((prog: any) => {
-        lines.push(`  - ${prog.name} (type: ${prog.type})`);
-      });
-    }
-
-    // Add function block declarations
-    if (ast.functionBlocks && ast.functionBlocks.length > 0) {
-      lines.push(`Function Blocks (${ast.functionBlocks.length}):`);
-      ast.functionBlocks.forEach((fb: any) => {
-        lines.push(`  - ${fb.name} (type: ${fb.type})`);
-      });
-    }
-
-    // Add function declarations
-    if (ast.functions && ast.functions.length > 0) {
-      lines.push(`Functions (${ast.functions.length}):`);
-      ast.functions.forEach((func: any) => {
-        lines.push(`  - ${func.name} (type: ${func.type})`);
-      });
-    }
-
-    return lines;
-  };
-
   return (
     <>
       {/* Log output - uses logs prop */}

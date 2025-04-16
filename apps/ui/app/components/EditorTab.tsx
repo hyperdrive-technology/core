@@ -1,8 +1,14 @@
-import { Activity, Database, FileCode, Server, X } from 'lucide-react';
+import { Activity, Box, Database, FileCode, Server, X } from 'lucide-react';
 import React from 'react';
 import { FileNode } from './types';
 
-export type TabType = 'file' | 'variables' | 'trends' | 'status' | 'compile';
+export type TabType =
+  | 'file'
+  | 'variables'
+  | 'trends'
+  | 'status'
+  | 'compile'
+  | 'control';
 
 interface EditorTabProps {
   file: FileNode;
@@ -40,6 +46,8 @@ export default function EditorTab({
         return <Server className="h-3 w-3 mr-1" />;
       case 'compile':
         return <FileCode className="h-3 w-3 mr-1" />;
+      case 'control':
+        return <Box className="h-3 w-3 mr-1" />;
       default:
         return null;
     }
@@ -56,6 +64,8 @@ export default function EditorTab({
         return `Status: ${file.name}`;
       case 'compile':
         return `Compile: ${file.name}`;
+      case 'control':
+        return `Preview: ${file.name}`;
       default:
         return file.name;
     }

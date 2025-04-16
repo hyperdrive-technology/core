@@ -32,7 +32,7 @@ function EditorPage() {
   const [projectFiles, setProjectFiles] = useState<FileNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [logicFiles, setLogicFiles] = useState<
+  const [_logicFiles, setLogicFiles] = useState<
     Array<{ fileName: string; content: string }>
   >([]);
 

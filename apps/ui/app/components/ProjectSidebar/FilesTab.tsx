@@ -20,11 +20,12 @@ interface FilesTabProps {
   selectedFileId: string | null;
   onAddFile: (parentNode: FileNode | null, isFolder: boolean) => void;
   onDeleteFile: (node: FileNode) => void;
-  onDeploy?: (node: FileNode) => void;
-  onAddController?: () => void;
+  onDeploy: (node: FileNode) => void;
+  onAddController: () => void;
   onOpenVariableMonitor?: (node: FileNode) => void;
-  onOpenTrends?: (node: FileNode) => void;
-  onViewControllerStatus?: (node: FileNode) => void;
+  onOpenTrends: (node: FileNode) => void;
+  onViewControllerStatus: (node: FileNode) => void;
+  onPreviewControl?: (node: FileNode) => void;
 }
 
 export default function FilesTab({
@@ -38,6 +39,7 @@ export default function FilesTab({
   onOpenVariableMonitor,
   onOpenTrends,
   onViewControllerStatus,
+  onPreviewControl,
 }: FilesTabProps) {
   const { connect, disconnect, getControllerStatus, addController } =
     useWebSocket();
@@ -145,6 +147,7 @@ export default function FilesTab({
               selectedFileId={selectedFileId}
               onContextMenu={handleContextMenu}
               getControllerStatus={getControllerStatus}
+              onPreviewControl={onPreviewControl}
             />
           ))}
         </div>
@@ -169,6 +172,7 @@ export default function FilesTab({
         onConnectController={handleConnectController}
         onDisconnectController={handleDisconnectController}
         onViewControllerStatus={handleViewControllerStatus}
+        onPreviewControl={onPreviewControl}
         onClose={closeContextMenu}
       >
         <></>
@@ -184,6 +188,7 @@ interface TreeNodeProps {
   selectedFileId: string | null;
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
   getControllerStatus: (controllerId: string) => boolean;
+  onPreviewControl?: (node: FileNode) => void;
 }
 
 // TreeNode Component
@@ -194,6 +199,7 @@ export function TreeNode({
   selectedFileId,
   onContextMenu,
   getControllerStatus,
+  onPreviewControl,
 }: TreeNodeProps) {
   const { controllers, isControllerConnecting } = useWebSocket();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -241,11 +247,6 @@ export function TreeNode({
     }
     return null;
   };
-
-  // Check if this node is a controller and if it's connected
-  const isController = node.nodeType === 'controller';
-  const nodeIsConnected =
-    isController && node.id ? getControllerStatus(node.id) : false;
 
   const renderStatusIndicator = () => {
     if (node.nodeType !== 'controller') return null;
@@ -334,6 +335,7 @@ export function TreeNode({
               selectedFileId={selectedFileId}
               onContextMenu={onContextMenu}
               getControllerStatus={getControllerStatus}
+              onPreviewControl={onPreviewControl}
             />
           ))}
         </div>

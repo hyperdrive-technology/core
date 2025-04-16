@@ -1,5 +1,6 @@
 import {
   Activity,
+  Box,
   Database,
   FilePlus,
   FolderPlus,
@@ -27,6 +28,7 @@ interface ContextMenuProps {
   onConnectController?: (node: FileNode) => void;
   onDisconnectController?: (node: FileNode) => void;
   onViewControllerStatus?: (node: FileNode) => void;
+  onPreviewControl?: (node: FileNode) => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -43,6 +45,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onConnectController,
   onDisconnectController,
   onViewControllerStatus,
+  onPreviewControl,
 }) => {
   const { getControllerStatus } = useWebSocket();
   // Track context menu position
@@ -145,6 +148,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     }
   };
 
+  const handlePreviewControl = () => {
+    console.log('[ContextMenu] Preview Control clicked for:', node?.name);
+    if (node && onPreviewControl && !node.name.startsWith('_')) {
+      onPreviewControl(node);
+      onClose();
+    }
+  };
+
   // Check if the node is a controller
   const isController = node?.nodeType === 'controller';
 
@@ -157,6 +168,24 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   // Get specific heading type if it's a heading
   const headingType = isHeading ? node?.name : null;
+
+  // Determine if the preview option should be shown
+  const canPreviewControl =
+    type === 'file' &&
+    node &&
+    !node.name.startsWith('_') &&
+    node.name.match(/\.(jsx|tsx)$/) &&
+    onPreviewControl;
+
+  if (show && node && node.name.match(/\.(jsx|tsx)$/)) {
+    console.log(
+      `[ContextMenu] Checking preview for ${
+        node.name
+      }: type=${type}, startsWith=_: ${node.name.startsWith(
+        '_'
+      )}, handlerExists: ${!!onPreviewControl}, canPreview: ${!!canPreviewControl}`
+    );
+  }
 
   // Create a custom context menu that appears at the mouse position
   return (
@@ -241,13 +270,25 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 </button>
               )}
 
-            {/* Add separator if we have monitoring options */}
+            {/* ADDED: Control Preview Option */}
+            {canPreviewControl && (
+              <button
+                onClick={handlePreviewControl}
+                className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <Box className="h-4 w-4" />
+                <span>Preview Component</span>
+              </button>
+            )}
+
+            {/* Separator logic might need adjustment if Preview is added */}
             {(type === 'file' || type === 'folder' || isController) &&
               !isHeading &&
               (onOpenVariableMonitor ||
                 (onOpenTrends &&
                   (type !== 'file' ||
-                    node?.name.toLowerCase().endsWith('.st')))) && (
+                    node?.name.toLowerCase().endsWith('.st'))) ||
+                canPreviewControl) && (
                 <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
               )}
 

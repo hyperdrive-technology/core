@@ -14,6 +14,7 @@ import {
 import { toast } from 'sonner';
 import { useIECCompiler } from '../hooks/useIECCompiler';
 import { useMonacoLanguageClient } from '../hooks/useMonacoLanguageClient';
+import { useTypeScriptLanguageClient } from '../hooks/useTypeScriptLanguageClient';
 import { CONTROLLER_API } from '../utils/constants';
 import { IECFile } from '../utils/iec-file-loader';
 import {
@@ -29,6 +30,7 @@ import {
   FileDiagnostic, // Import the type definition
 } from './CompilePanel';
 import { useWebSocket } from './context/WebSocketContext';
+import ControlPreview from './ControlPreview';
 import EditorTab, { TabType } from './EditorTab'; // Import EditorTab component
 import './MonacoEditor.css'; // Import the CSS file with live value styles
 import NewFileDialog from './NewFileDialog';
@@ -90,18 +92,12 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
   const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
   const [isDeploying, setIsDeploying] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
-  // Remove old simple compilationResult state
-  // const [compilationResult, setCompilationResult] = useState<{
-  //   success: boolean;
-  //   error?: string;
-  // } | null>(null);
-
-  // Add new state for detailed compilation results and logs
+  // Add back the missing state declarations
   const [latestCompilationResult, setLatestCompilationResult] =
     useState<CompileResult | null>(null);
   const [compilationLogs, setCompilationLogs] = useState<string[]>([]);
 
-  // Add a state for tracking the current project/folder
+  // Add new state for tracking the current project/folder
   // Use provided projectName from props if available, otherwise default
   const [currentProjectName, setCurrentProjectName] = useState<string>(
     projectName || 'Hyperdrive Project'
@@ -188,12 +184,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
   // Detect project name from folders when component mounts
   useEffect(() => {
-    // Skip if we have a project name from props
-    if (hasProjectNameProp.current) {
-      return;
-    }
-
-    // Check if we have the example project structure
+    // Skip if we have the example project structure
     const hasDevicesFolder = files.some(
       (file) => file.isFolder && file.name.toLowerCase() === 'devices'
     );
@@ -331,12 +322,13 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       let language = 'plaintext';
 
       if (extension === 'js') language = 'javascript';
+      if (extension === 'jsx') language = 'javascriptreact';
       if (extension === 'ts') language = 'typescript';
-      if (extension === 'jsx' || extension === 'tsx') language = 'typescript';
+      if (extension === 'tsx') language = 'typescriptreact';
       if (extension === 'json') language = 'json';
       if (extension === 'html') language = 'html';
       if (extension === 'css') language = 'css';
-      if (extension === 'st') language = IEC61131_LANGUAGE_ID; // IEC61131-3 Structured Text
+      if (extension === 'st') language = IEC61131_LANGUAGE_ID;
 
       // Use a try-catch for all Monaco operations to catch any potential errors
       try {
@@ -462,6 +454,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
 
   // Use our custom language client hook
   useMonacoLanguageClient(monacoRef.current, editorRef.current);
+  useTypeScriptLanguageClient(monacoRef.current, editorRef.current);
 
   // Handle editor mounting
   const handleEditorDidMount: OnMount = (editor, monaco) => {
@@ -497,13 +490,11 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       noSyntaxValidation: false,
     });
 
+    // Basic compiler options (detailed config moved to useTypeScriptLanguageClient hook)
     monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-      target: monaco.languages.typescript.ScriptTarget.ES2015,
+      target: monaco.languages.typescript.ScriptTarget.ESNext,
       allowNonTsExtensions: true,
-      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
       jsx: monaco.languages.typescript.JsxEmit.React,
-      jsxFactory: 'React.createElement',
-      reactNamespace: 'React',
     });
 
     // Ensure editor is ready before marking as ready
@@ -795,9 +786,9 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
               let language = 'plaintext';
 
               if (extension === 'js') language = 'javascript';
+              if (extension === 'jsx') language = 'javascriptreact';
               if (extension === 'ts') language = 'typescript';
-              if (extension === 'jsx' || extension === 'tsx')
-                language = 'typescript';
+              if (extension === 'tsx') language = 'typescriptreact';
               if (extension === 'json') language = 'json';
               if (extension === 'html') language = 'html';
               if (extension === 'css') language = 'css';
@@ -959,83 +950,98 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     return null;
   };
 
-  // Modified handleSelectFile to detect project (top-level folder) this file belongs to
+  // Add helper function
+  const isControlFile = (node: FileNode): boolean => {
+    // Debugging: Log the node being checked
+    console.log(`[isControlFile] Checking node:`, JSON.stringify(node));
+
+    if (
+      !node.isFolder &&
+      (node.name.endsWith('.jsx') || node.name.endsWith('.tsx'))
+    ) {
+      // Check 1: Path (preferred if available)
+      if (node.path && typeof node.path === 'string') {
+        console.log(`[isControlFile] Checking path: ${node.path}`);
+        if (
+          node.path.includes('/control/') ||
+          node.path.includes('\\control\\') ||
+          node.path.includes('-control-')
+        ) {
+          console.log(`[isControlFile] Path match found.`);
+          return true;
+        }
+      }
+      // Check 2: ID (fallback)
+      if (node.id && typeof node.id === 'string') {
+        console.log(`[isControlFile] Checking ID: ${node.id}`);
+        // Look for /control/, \control\, or -control-
+        if (
+          node.id.includes('/control/') ||
+          node.id.includes('\\control\\') ||
+          node.id.includes('-control-')
+        ) {
+          console.log(`[isControlFile] ID match found.`);
+          return true;
+        }
+      }
+    }
+    console.log(`[isControlFile] No match found.`);
+    return false;
+  };
+
+  // Modify handleSelectFile
   const handleSelectFile = useCallback(
     (node: FileNode, addHistory = true) => {
       if (!node.isFolder) {
-        // Skip project name detection if we have a project name from props
+        // --- START: Control Preview Logic ---
+        // The block checking for isControlFile and opening the preview tab
+        // has been removed from this handleSelectFile function.
+        // Now, left-clicking a control file will open it in the regular editor.
+        // --- END: Control Preview Logic ---
+
+        // Original project name detection logic (if needed)
         if (!hasProjectNameProp.current) {
-          // Find which project (top-level folder) this file belongs to
+          // Assuming findProjectForFile is defined elsewhere in the component
           const findProjectForFile = (
             nodes: FileNode[],
             targetId: string
           ): string => {
-            // Helper function to search in the file tree
-            const findProject = (
-              currentNodes: FileNode[],
-              id: string,
-              currentParents: FileNode[] = []
-            ): { found: boolean; projectName: string } => {
-              for (const n of currentNodes) {
-                // If this is the file we're looking for
-                if (n.id === id) {
-                  // Check if this file has any parent (which would be the project)
-                  if (currentParents.length > 0) {
-                    // The first parent in the chain is the top-level folder (project)
-                    return { found: true, projectName: currentParents[0].name };
-                  }
-                  // File at root level - use a default project name instead of null
-                  return { found: true, projectName: 'Hyperdrive Project' };
-                }
-
-                // If not found and we have a folder with children, search recursively
-                if (n.isFolder && n.children) {
-                  const result = findProject(n.children, id, [
-                    ...currentParents,
-                    n,
-                  ]);
-                  if (result.found) {
-                    return result;
-                  }
+            // Traverse the file tree to find the project name in the metadata
+            for (const node of nodes) {
+              if (node.id === targetId) {
+                return node.metadata?.projectName || 'Unknown Project';
+              }
+              if (node.children) {
+                const projectName = findProjectForFile(node.children, targetId);
+                if (projectName) {
+                  return projectName;
                 }
               }
-              return { found: false, projectName: 'Hyperdrive Project' };
-            };
-
-            const result = findProject(nodes, targetId);
-            return result.projectName;
+            }
+            return 'Hyperdrive Project';
           };
-
-          // Find the project name for this file
           const projectName = findProjectForFile(files, node.id);
           setCurrentProjectName(projectName);
         }
 
-        // Check if file is already open
+        // Original logic to open file in editor
         const isFileOpen = openFiles.some((file) => file.id === node.id);
-
         if (!isFileOpen) {
-          // Add to open files
           setOpenFiles((prev) => [...prev, node]);
         }
-
-        // Set active file
         setActiveFileId(node.id);
-
-        // Add to navigation history if needed
         if (addHistory) {
           addToHistory(node.id);
         }
-
-        // Wait until the editor is fully ready before displaying the file
         if (editorReady && editorRef.current && monacoRef.current) {
-          // Display the file with a small delay to ensure all components are ready
           setTimeout(() => {
+            // Assuming displayFileInEditor is defined elsewhere
             displayFileInEditor(node);
           }, 50);
         }
       }
     },
+    // Ensure all dependencies used inside useCallback are listed
     [
       openFiles,
       displayFileInEditor,
@@ -1043,6 +1049,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
       addToHistory,
       files,
       projectName,
+      hasProjectNameProp,
+      setCurrentProjectName,
     ]
   );
 
@@ -2382,14 +2390,6 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     body: any;
   }
 
-  interface ProgramAST extends ASTNode {
-    programs: ProgramDeclAST[];
-    functionBlocks: any[];
-    functions: any[];
-    structTypes: any[];
-    enumTypes: any[];
-  }
-
   // Function to extract variables from AST
   const extractVariablesFromAST = (
     ast: any
@@ -3088,6 +3088,47 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
     latestCompilationResult,
   ]);
 
+  // ADDED: Handler specifically for the preview action from context menu
+  const handlePreviewControl = useCallback(
+    (node: FileNode) => {
+      console.log(
+        `[MonacoEditor] handlePreviewControl called for: ${node.name}`
+      );
+      if (isControlFile(node)) {
+        // Re-use the logic from handleSelectFile to open the preview tab
+        const previewTabId = `control-preview-${node.id}`;
+        const existingTab = openFiles.find((f) => f.id === previewTabId);
+
+        if (existingTab) {
+          setActiveFileId(previewTabId);
+          addToHistory(previewTabId); // Assuming addToHistory is defined
+          return;
+        }
+
+        const previewTab: FileNode = {
+          id: previewTabId,
+          name: node.name,
+          path: node.path,
+          isFolder: false,
+          content: node.content,
+          children: [],
+          nodeType: 'control', // Explicitly set nodeType to 'control'
+        };
+
+        setOpenFiles((prev) => [...prev, previewTab]);
+        setActiveFileId(previewTabId);
+        addToHistory(previewTabId); // Assuming addToHistory is defined
+      } else {
+        console.warn(
+          '[MonacoEditor] handlePreviewControl called on non-control file:',
+          node
+        );
+      }
+    },
+    // Dependencies needed for this handler
+    [openFiles, addToHistory, setActiveFileId, setOpenFiles]
+  );
+
   return (
     <div className="flex flex-col h-full">
       <CommandBar
@@ -3122,6 +3163,7 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
             onAddController={handleAddController}
             onOpenTrends={handleOpenTrends}
             onViewControllerStatus={handleViewControllerStatus}
+            onPreviewControl={handlePreviewControl} // Pass the new handler
           />
         </Resizable>
 
@@ -3195,6 +3237,8 @@ const MonacoEditor = ({ initialFiles, projectName }: MonacoEditorProps) => {
                 logs={compilationLogs}
                 result={latestCompilationResult}
               />
+            ) : activeFile?.nodeType === 'control' ? ( // ADDED THIS CASE
+              <ControlPreview file={activeFile} />
             ) : activeFile ? (
               <EditorErrorBoundary>
                 <Editor

@@ -7,9 +7,7 @@ WEBSITE_DIR := apps/website
 # Tool configuration
 PNPM := pnpm
 GO := go
-DOCKER_COMPOSE := docker compose
 PRETTIER := $(PNPM) prettier
-NEXT := $(PNPM) next
 TSC := $(PNPM) tsc
 ESLINT := $(PNPM) eslint
 
@@ -45,20 +43,10 @@ build-go: go.sum ## Build Go runtime
 	@mkdir -p $(RUNTIME_DIR)/dist
 	@cd $(RUNTIME_DIR) && $(GO) build $(GO_BUILD_FLAGS) -o dist/hyperdrive ./cmd/hyperdrive
 
-.PHONY: dev
-dev: ## Start development environment
-	@echo "Starting development environment..."
-	@$(DOCKER_COMPOSE) up --build
-
-.PHONY: prod
-prod: ## Start production environment
-	@echo "Starting production environment..."
-	@$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.prod.yml up --build -d
-
 .PHONY: dev-ui
 dev-ui: node_modules ## Start UI in development mode
 	@echo "Starting UI in development mode..."
-	@cd $(UI_DIR) && $(NEXT) dev -p 8080
+	@cd $(UI_DIR) && $(PNPM) run dev
 
 .PHONY: dev-go
 dev-go: go.sum ## Start Go runtime in development mode
@@ -126,30 +114,6 @@ clean-ui: ## Clean UI build artifacts
 clean-go: ## Clean Go build artifacts
 	@echo "Cleaning Go build artifacts..."
 	@cd $(RUNTIME_DIR) && rm -rf dist
-
-.PHONY: clean-docker
-clean-docker: ## Clean Docker resources
-	@echo "Cleaning Docker resources..."
-	@$(DOCKER_COMPOSE) down -v --remove-orphans
-
-################################################################################
-# Docker targets
-################################################################################
-
-.PHONY: docker-build
-docker-build: ## Build all Docker images
-	@echo "Building Docker images..."
-	@$(DOCKER_COMPOSE) build
-
-.PHONY: docker-up
-docker-up: ## Start all Docker containers
-	@echo "Starting Docker containers..."
-	@$(DOCKER_COMPOSE) up
-
-.PHONY: docker-down
-docker-down: ## Stop all Docker containers
-	@echo "Stopping Docker containers..."
-	@$(DOCKER_COMPOSE) down
 
 ################################################################################
 # Dependencies

@@ -1195,7 +1195,6 @@ export class IEC61131Visitor {
   }
 
   private visitFunctionCall(cst: IEC61131CstNode): FunctionCallExpression {
-    let functionName: string;
     let objectName: string | undefined;
     let memberName: string | undefined;
 
@@ -1204,7 +1203,6 @@ export class IEC61131Visitor {
       // This is an object method call with dot notation (e.g., timer.Q)
       objectName = (cst.children.objectName[0] as IToken).image;
       memberName = (cst.children.memberName[0] as IToken).image;
-      functionName = `${objectName}.${memberName}`;
 
       // For timers, we might not have a function call with parentheses
       // Example: InletDelay.Q doesn't require arguments
@@ -1222,24 +1220,12 @@ export class IEC61131Visitor {
       }
     } else if (cst.children?.functionName) {
       // This is a direct function call
-      functionName = (cst.children.functionName[0] as IToken).image;
     } else {
       console.error(
         'Function call missing identifier:',
         JSON.stringify(cst.children, null, 2)
       );
-
-      // Use a default name for logging/debugging purposes
-      functionName = 'unknown';
-
-      // If we have a name property and it's an IToken with an image property
-      if (
-        cst.children?.name &&
-        cst.children.name[0] &&
-        'image' in cst.children.name[0]
-      ) {
-        functionName = (cst.children.name[0] as IToken).image;
-      }
+      throw new Error('Function call missing identifier');
     }
 
     // Process arguments
@@ -1461,9 +1447,6 @@ export class IEC61131Visitor {
         $type: 'ElementAccess',
         member: (cst.children.IDENTIFIER[0] as IToken).image,
       });
-
-      // Process array indices and dot-accessed members
-      let identifierIndex = 1;
 
       // Check if we have expressions (for array indices)
       if (cst.children.expression) {
