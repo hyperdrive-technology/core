@@ -66,3 +66,17 @@ tmp/
 # Runtime data
 runtime-data/
 data/
+
+# Added by Claude Task Master
+# Logs
+logs
+dev-debug.log
+# Dependency directories
+node_modules/
+# Environment variables
+# Editor directories and files
+.vscode
+# OS specific
+# Task files
+tasks.json
+tasks/ 

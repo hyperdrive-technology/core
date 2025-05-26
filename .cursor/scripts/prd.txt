@@ -1,0 +1,134 @@
+# Overview
+Hyperdrive is an integrated automation platform that provides industrial PLC (Programmable Logic Controller) functionality with modern software development capabilities. The system combines a Go-based backend that supports IEC61131-3 standards with a modern React/TypeScript frontend. Hyperdrive is designed for various deployment environments including field devices (using Gokrazy on Raspberry Pi), desktop applications (via Electron), and cloud deployments (using containers).
+
+# Core Features
+
+## Backend Core
+- Go-based single binary implementation of Hyperdrive Core
+- PLC execution engine for industrial automation
+- Compiler service for IEC/C to AST/IR conversion
+- State store for maintaining system state
+- Protocol managers for industrial communication
+
+## Field Device Deployment
+- Gokrazy minimal Go-based OS wrapper for Raspberry Pi/field devices
+- Support for real-time capabilities with PREEMPT-RT Linux
+- Native RPi hardware integration with low-latency control
+- Support for industrial protocols (MQTT, Modbus, OPC-UA)
+
+## Desktop & Cloud Deployment
+- Electron wrapper for desktop integration with GUI
+- Containerized deployment for cloud services
+- REST API endpoints for configuration and services
+
+## WASM Execution Environment
+- Wazero for loading and executing user-provided C code in WASM
+- Safe sandbox environment for executing customer logic
+
+## Frontend IDE & Dashboard
+- React with TypeScript web-based IDE/dashboard
+- Vite bundler with esbuild for fast builds
+- 2D Graphics Editor using React Flow for process diagrams
+- 3D Graphics Editor using React Three Fiber for immersive visualization
+
+## Device Management
+- CLI tool for component management (importing IEC code, exporting WASM modules)
+- Device flashing and management tool based on Balena Etcher
+
+# Technical Architecture
+
+## Backend Components
+- Golang HTTP Server (net/http, chi, or gin) for REST API
+- Internal compiler service with LLVM-based toolchain
+- Wazero WASM runtime for executing compiled code
+- Industrial protocol implementations (MQTT, Modbus, OPC-UA)
+
+## Frontend Components
+- React/TypeScript UI with Tanstack Router
+- Vite bundler with hot-reload capabilities
+- ShadCN component library for UI elements
+- React Flow for 2D graphics and React Three Fiber for 3D visualization
+
+## Deployment Options
+- Gokrazy for field devices (Raspberry Pi)
+- Electron for desktop applications
+- Docker containers for cloud deployments
+
+## Hardware Support
+- unipi AIO PLC (Corvette class) - Compact for small-scale automation
+- revpi Modular PLC (Frigate class) - Flexible for standard industrial use
+- onlogic PC (Battleship class) - Heavy-duty for mission-critical operations
+- onlogic Web Panel (Cruiser class) - Integrated HMI display
+
+# Development Roadmap
+
+## Phase 1: Core Backend Infrastructure
+- Implement Go-based PLC execution engine
+- Develop compiler service for IEC/C code
+- Create state store mechanism
+- Implement basic industrial protocol support (MQTT, Modbus)
+
+## Phase 2: Frontend Development
+- Build React/TypeScript IDE framework
+- Implement code editor with syntax highlighting for IEC61131-3
+- Create basic dashboard for monitoring
+- Integrate Vite bundler with hot-reload
+
+## Phase 3: Integration & Deployment
+- Complete Gokrazy integration for field devices
+- Implement Electron wrapper for desktop
+- Set up containerization for cloud deployment
+- Create CLI tooling for component management
+
+## Phase 4: Advanced Features
+- Develop 2D graphics editor for process diagrams
+- Implement 3D visualization capabilities
+- Enhance protocol support with OPC-UA and optional EtherCAT
+- Create device flashing and management tool
+
+## Phase 5: Enterprise Features
+- Implement SaaS capabilities (Hyperdrive armada)
+- Add integration with AWS services
+- Develop historian and unified control features
+- Implement business integration capabilities
+
+# Logical Dependency Chain
+1. Backend Core (PLC engine, compiler, state store)
+2. Basic protocol support (MQTT, Modbus)
+3. Frontend framework and basic UI
+4. Integration between frontend and backend
+5. Deployment mechanisms (Gokrazy, Electron, containers)
+6. Advanced visualization (2D, 3D editors)
+7. Device management tooling
+8. Enterprise features and cloud integration
+
+# Risks and Mitigations
+
+## Technical Challenges
+- Risk: Performance issues with WASM execution
+  Mitigation: Optimize WASM runtime and compilation process
+
+- Risk: Real-time capabilities on different hardware
+  Mitigation: Use PREEMPT-RT Linux and hardware-specific optimizations
+
+## Integration Challenges
+- Risk: Frontend and backend compatibility issues
+  Mitigation: Define clear API contracts and implement comprehensive testing
+
+- Risk: Industrial protocol complexities
+  Mitigation: Implement protocols incrementally, starting with MQTT and Modbus
+
+## Resource Constraints
+- Risk: Balancing feature development across multiple platforms
+  Mitigation: Prioritize core functionality and implement platform-specific features incrementally
+
+# Appendix
+
+## Technology Stack Summary
+- Backend: Golang
+- Frontend: React/TypeScript
+- Bundler: Vite with esbuild
+- WASM Compiler: Emscripten/Zig (LLVM-based)
+- Field Deployment: Gokrazy
+- Desktop: Electron
+- Cloud: Docker containers
