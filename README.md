@@ -2,7 +2,7 @@
 
 Hyperdrive is a modern, open-source PLC runtime with support for IEC 61131-3 programming languages and online changes.
 
-🚧 This repo is still under construction. 🚧
+> 🚧 This repo is still under construction. 🚧
 
 ## Features
 
